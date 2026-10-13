@@ -483,9 +483,10 @@
           refs.push(`<a class="noteref" id="${rid}" href="#${nid}">${marker}</a>`);
           cur.notes.push(`<p class="cm" id="${nid}"><a class="noteback" href="#${rid}">${marker}</a> ${who} ${n.text}</p>`);
         } else {
-          // הערות סיום (EPUB 3 / DPUB-ARIA): הטקסט בקובץ נפרד בסוף הספר, ונפתח כחלונית מעל הטקסט
+          // הערות סיום: הטקסט בקובץ נפרד בסוף הספר, ונפתח כחלונית. EPUB SSV 1.1: endnote הוצא משימוש —
+            // ההערה הבודדת בתוך section endnotes מסומנת footnote (בלי role על li, לפי DAISY KB)
           refs.push(`<a class="noteref" epub:type="noteref" role="doc-noteref" id="${rid}" href="${cur.notesName}#${nid}">${marker}</a>`);
-          cur.notes.push(`<li class="endnote" epub:type="endnote" id="${nid}"><p><a class="noteback" role="doc-backlink" href="${cur.name}#${rid}">${marker}</a> ${who} ${n.text}</p></li>`);
+          cur.notes.push(`<li class="endnote" epub:type="footnote" id="${nid}"><p><a class="noteback" role="doc-backlink" href="${cur.name}#${rid}">${marker}</a> ${who} ${n.text}</p></li>`);
         }
       }
       // מחליפים את מצייני המקום בסמנים; מציין שנבלע (למשל בתוך <script>) — הסמן עובר לסוף השורה,

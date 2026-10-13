@@ -226,7 +226,7 @@ function tinyPng() {
     const notes = f.filter((x) => /-notes\.xhtml$/.test(x.path)).map((x) => x.data).join('');
     assert.ok(body.includes('epub:type="noteref"'));
     assert.ok(!body.includes('פירוש רש"י'), 'commentary text must not be in the body');
-    assert.ok(notes.includes('epub:type="endnote"') && notes.includes('פירוש רש&quot;י'));
+    assert.ok(notes.includes('<li class="endnote" epub:type="footnote"') && !notes.includes('epub:type="endnote"') && notes.includes('פירוש רש&quot;י'));
     assert.ok(/<itemref idref="x\d+" linear="no"\/>/.test(opf));
     assert.ok(opf.includes('page-progression-direction="rtl"'));
   });

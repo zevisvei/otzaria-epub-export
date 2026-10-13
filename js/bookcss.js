@@ -71,9 +71,19 @@ section.chapter-notes {
 }
 h2.notes-title { font-size: 1.15em; margin: 0.4em 0 0.6em; }
 
-/* חלונית בלבד: קוראים עם חלוניות מסתירים את ה-aside; בשאר — מוצג בקטן בסוף הפרק */
-div.footnotes { margin-top: 2em; padding-top: 0.5em; border-top: 1px solid #999; font-size: 0.82em; line-height: 1.45; }
-aside.footnote p { margin: 0 0 0.4em; }
+/* חלונית בלבד — <aside epub:type="footnote">: Apple Books ודומיו מסתירים אותו בעצמם ומציגים
+   רק כחלונית (Apple Books Asset Guide). calibre מציג חלונית אך אינו מסתיר, ולכן מסתירים
+   רק בו, לפי המחלקות שהוא מתעד לשם כך (manual/viewer.rst): is-calibre-viewer על השורש,
+   ו-calibre-footnote-container על ה-body של החלונית. בלי display:none כללי — הוא עלול
+   לרוקן חלוניות בקוראים שמעתיקים את הסגנון. */
+.is-calibre-viewer div.footnotes,
+.is-calibre-viewer aside.footnote { display: none; }
+.is-calibre-viewer body.calibre-footnote-container div.footnotes,
+.is-calibre-viewer body.calibre-footnote-container aside.footnote { display: block; }
+div.footnotes { margin-top: 2em; padding-top: 0.5em; border-top: 1px solid #999; }
+.is-calibre-viewer body.calibre-footnote-container div.footnotes { margin: 0; padding: 0; border: 0; }
+aside.footnote { font-size: 0.9em; line-height: 1.45; }
+aside.footnote p { margin: 0; }
 .note-mark { font-weight: bold; }
 
 /* הערות סיום (נפתחות כחלונית) */
