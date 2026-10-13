@@ -57,14 +57,19 @@
           return ok(t.substring(o, o + Math.min(5000, p.limit || 1000)));
         }
         case 'library.getCommentators': {
-          const list = [{ title: `רש"י על ${p.bookId}`, linkCount: 900 }, { title: `אבן עזרא על ${p.bookId}`, linkCount: 400 }];
+          const list = [{ title: `רש"י על ${p.bookId}`, linkCount: 900 }, { title: `אבן עזרא על ${p.bookId}`, linkCount: 400 }, { title: 'שער הציון', linkCount: 300 }];
           return ok(p.grouped ? { groups: [{ title: 'ראשונים', commentators: list.map((c) => c.title) }] } : { commentators: list });
         }
         case 'library.getLinks': {
           const links = [];
           for (let l = p.startLine; l <= p.endLine; l++) {
             if (l % 4 !== 2) continue;
-            for (const t of p.targetTitles) links.push({ sourceLine: l, targetTitle: t, targetLine: l * 2, targetLineEnd: null, targetIsUserBook: false, targetCategoryId: 3 });
+            for (const t of p.targetTitles) {
+              const link = { sourceLine: l, targetTitle: t, targetLine: l * 2, targetLineEnd: null, targetIsUserBook: false, targetCategoryId: 3, targetHeRef: `${t} א, ${heb(l % 20 + 1)}` };
+              // שער הציון: עוגן-אות בתוך השורה, כמו על המשנה ברורה
+              if (t === 'שער הציון' && p.includeAnchors) link.anchor = { start: 14, end: null, label: null };
+              links.push(link);
+            }
           }
           return ok({ truncated: false, links });
         }

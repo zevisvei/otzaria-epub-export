@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "com.community.epub-export",
   "name": "ייצוא EPUB",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "sdkVersion": "1.x",
   "description": "ייצוא ספרים מאוצריא לספר אלקטרוני EPUB מימין לשמאל: טווח לבחירה, כמה ספרים בקובץ, מפרשים כהערות, דף שער ופרטי זכויות.",
   "author": "zevisvei",

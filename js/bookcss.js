@@ -46,6 +46,7 @@ a.noteref {
   padding: 0 0.12em;
 }
 a.noteback { text-decoration: none; font-weight: bold; }
+.anchor-mark { font-size: 0.68em; vertical-align: super; line-height: 0; font-weight: bold; }
 .cm-rashi { font-family: "Noto Rashi Hebrew", "Mekorot-Rashi", "Rashi", serif; }
 .cm-book { font-family: inherit; }
 .cm-who { font-weight: bold; }

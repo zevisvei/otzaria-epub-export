@@ -80,6 +80,17 @@ test('rightsFor maps known and unknown sources', () => {
   assert.strictEqual(u.personal, true);
   assert.strictEqual(u.sourceName, 'מקור לא ידוע');
 });
+test('injectAtVisibleOffsets counts visible chars only', () => {
+  const pts = (...xs) => xs.map(([at, text]) => ({ at, text }));
+  // תגים אינם נספרים; ההזרקה לפני התו הגלוי הבא (אחרי תג סוגר)
+  assert.strictEqual(C.injectAtVisibleOffsets('<b>אבג</b> דה', pts([3, '|'])), '<b>אבג</b>| דה');
+  // entity נספר כתו אחד
+  assert.strictEqual(C.injectAtVisibleOffsets('א&quot;ב', pts([2, '|'])), 'א&quot;|ב');
+  // סוף השורה וכמה נקודות
+  assert.strictEqual(C.injectAtVisibleOffsets('אב', pts([0, '['], [9, ']'])), '[אב]');
+  // מעבר לסוף שורת כותרת — בתוך הכותרת, לפני התג הסוגר
+  assert.strictEqual(C.injectAtVisibleOffsets('<h2>פרק ב</h2>', pts([30, '|'])), '<h2>פרק ב|</h2>');
+});
 test('crc32', () => {
   assert.strictEqual(C.crc32(new TextEncoder().encode('123456789')), 0xCBF43926);
 });
@@ -107,6 +118,23 @@ function sampleBook(title, chapters, withNotes) {
     }
   }
   return { title, lines, toc, notes };
+}
+
+// כמו שער הציון על המשנה ברורה: הערות מעוגנות למילה בתוך השורה
+function anchoredBook() {
+  const lines = ['<h1>משנה ברורה</h1>', '<h2>סימן א</h2>'];
+  const toc = [{ text: 'משנה ברורה', index: 0, level: 1 }, { text: 'סימן א', index: 1, level: 2 }];
+  const notes = {};
+  for (let k = 0; k < 6; k++) {
+    const ln = lines.length;
+    lines.push(`<b>(${C.hebNum(k + 1)}) יתגבר</b> כארי לעמוד &quot;בבוקר&quot; לעבודת בוראו`);
+    notes[ln] = [
+      { commentator: 'שער הציון', html: `מקור ${k + 1}`, at: 12, label: C.hebNum(2 * k + 1) },
+      { commentator: 'שער הציון', html: `מקור נוסף ${k + 1}`, at: 27, label: C.hebNum(2 * k + 2) },
+      { commentator: 'ביאור הלכה', html: 'ביאור בלי עוגן' },
+    ];
+  }
+  return { title: 'משנה ברורה', lines, toc, notes };
 }
 
 function bookSpec(b, range, extra) {
@@ -171,6 +199,9 @@ function tinyPng() {
     build('multi-endnotes', [bookSpec(gen, [1, 2]), bookSpec(ex)], { notesMode: 'endnotes' }, true),
     build('notes-line', [bookSpec(ex)], { notesMode: 'line', notesFont: 'rashi' }, false),
     build('notes-chapter', [bookSpec(ex)], { notesMode: 'chapter', notesFont: 'book', removeNikud: true, removeTeamim: true }, false),
+    build('anchored-endnotes', [bookSpec(anchoredBook())], { notesMode: 'endnotes' }, false),
+    build('anchored-line', [bookSpec(anchoredBook())], { notesMode: 'line' }, false),
+    build('anchored-chapter', [bookSpec(anchoredBook())], { notesMode: 'chapter' }, false),
   ]);
 
   test('mimetype is first and stored', () => {
@@ -208,6 +239,21 @@ function tinyPng() {
     assert.ok(body.includes('<section class="chapter-notes cm-book">'));
     assert.ok(!body.includes('epub:type="noteref"') && !body.includes('epub:type="footnote"'));
     assert.ok(!builds[4].files.some((x) => x.path.includes('/fonts/')));
+  });
+  test('anchored notes sit at their position with the source label', () => {
+    const body = (b) => b.files.filter((x) => /b1-\d{4}\.xhtml$/.test(x.path)).map((x) => x.data).join('');
+    const end = body(builds[5]);
+    // "(א) יתגבר" = 9 תווים גלויים + רווח + "כא" = 12 → הסמן אחרי "כא"
+    assert.ok(/<b>\(א\) יתגבר<\/b> כא<a class="noteref" epub:type="noteref"[^>]*>\(א\)<\/a>רי/.test(end), 'anchored ref inside the line');
+    assert.ok(/בבוקר<a class="noteref"[^>]*>\(ב\)<\/a>&quot;/.test(end), 'entity counted as one char');
+    // הערה בלי עוגן — בסוף השורה, במספור רץ
+    assert.ok(/בוראו<a class="noteref"[^>]*>א<\/a><\/p>/.test(end));
+    assert.ok(!/\uE000|\uE001/.test(end), 'no leftover placeholders');
+    const line = body(builds[6]);
+    assert.ok(line.includes('כא<span class="anchor-mark">(א)</span>רי'));
+    assert.ok(line.includes('<p class="cm"><span class="anchor-mark">(א)</span> <b class="cm-who">שער הציון</b> מקור 1</p>'));
+    const chap = body(builds[7]);
+    assert.ok(/כא<a class="noteref" id="b1r1" href="#b1n1">\(א\)<\/a>רי/.test(chap));
   });
   test('metadata has rights, source and personal-use note', () => {
     const opf = builds[2].files.find((x) => x.path.endsWith('content.opf')).data;

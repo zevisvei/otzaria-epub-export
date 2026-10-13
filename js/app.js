@@ -5,7 +5,7 @@
 
   const C = window.EpubCore;
   const HAS_OTZ = typeof window.Otzaria !== 'undefined';
-  const VERSION = '1.0.0'; // יש לעדכן יחד עם manifest.json
+  const VERSION = '1.0.1'; // יש לעדכן יחד עם manifest.json
   const CHUNK = 5000; // תקרת library.getBookContent
   const LINKS_WINDOW = 200; // תקרת library.getLinks
   const LINK_CONTENT_BATCH = 25; // תקרת library.getLinkContent
@@ -89,8 +89,15 @@
       ...items.map((b) => el('div', { class: 'result' },
         el('span', { class: 'result-title', text: b.title || b.bookId }),
         b.categoryPath ? el('span', { class: 'result-path', text: b.categoryPath.replace(/^\//, '').replace(/\//g, ' › ') }) : '',
-        el('button', { class: 'btn', onclick: () => addBook(b) }, 'הוספה'))),
+        el('button', { class: 'btn', onclick: () => { closeSearch(); addBook(b); } }, 'הוספה'))),
     );
+  }
+
+  /** סוגר את רשימת התוצאות ומנקה את השדה (גם מבטל חיפוש שעוד רץ). */
+  function closeSearch(keepText) {
+    searchSeq++;
+    if (!keepText) $('#searchInput').value = '';
+    $('#searchResults').replaceChildren();
   }
 
   async function addBook(meta) {
@@ -377,6 +384,7 @@
       const r = await must('library.getLinks', {
         bookId: b.bookId, id: b.id ?? undefined,
         startLine: line, endLine: Math.min(end - 1, line + win - 1), targetTitles: titles,
+        includeAnchors: true,
       });
       if (r.truncated && win > 1) { win = Math.max(1, win >> 1); continue; }
       links.push(...(r.links || []));
@@ -408,24 +416,48 @@
         }
       });
     }
-    // קיבוץ: שורה ← מפרש ← טקסטים, לפי סדר המפרשים שנבחר
+    // קיבוץ לפי שורה. קישור עם עוגן-מילה (למשל שער הציון על המשנה ברורה) הוא הערה
+    // נפרדת במקומה בשורה; קישורים בלי עוגן מאוחדים להערה אחת לכל מפרש בסוף השורה.
     const order = new Map(titles.map((t, i) => [t, i]));
+    const keyOf = (l) => `${l.targetTitle}|${l.targetLine}|${l.targetLineEnd ?? ''}|${l.targetIsUserBook ? 1 : 0}`;
     const byLine = {};
     for (const l of links) {
-      const html = content.get(`${l.targetTitle}|${l.targetLine}|${l.targetLineEnd ?? ''}|${l.targetIsUserBook ? 1 : 0}`);
+      const html = content.get(keyOf(l));
       if (!html) continue;
-      const perLine = byLine[l.sourceLine] || (byLine[l.sourceLine] = new Map());
-      const parts = perLine.get(l.targetTitle) || [];
+      const entry = byLine[l.sourceLine] || (byLine[l.sourceLine] = { anchored: [], merged: new Map() });
+      const a = l.anchor;
+      if (a && Number.isInteger(a.start) && a.start >= 0) {
+        // עוגן-נקודה: הסמן לפני התו שבמיקום; עוגן-טווח: אחרי סוף הטווח
+        const at = Number.isInteger(a.end) && a.end > a.start ? a.end : a.start;
+        if (!entry.anchored.some((x) => x.title === l.targetTitle && x.at === at && x.html === html)) {
+          entry.anchored.push({ title: l.targetTitle, at, label: anchorLabel(a.label, l.targetHeRef), html });
+        }
+        continue;
+      }
+      const parts = entry.merged.get(l.targetTitle) || [];
       if (!parts.includes(html)) parts.push(html);
-      perLine.set(l.targetTitle, parts);
+      entry.merged.set(l.targetTitle, parts);
     }
+    const rank = (t) => order.get(t) ?? 99;
     const notes = {};
-    for (const [ln, perLine] of Object.entries(byLine)) {
-      notes[ln] = [...perLine.entries()]
-        .sort((a, x) => (order.get(a[0]) ?? 99) - (order.get(x[0]) ?? 99))
-        .map(([title, parts]) => ({ commentator: C.commentatorShortName(title, b.title), html: parts.join('<br/>') }));
+    for (const [ln, entry] of Object.entries(byLine)) {
+      notes[ln] = [
+        ...entry.anchored.map((x) => ({ commentator: C.commentatorShortName(x.title, b.title), html: x.html, at: x.at, label: x.label })),
+        ...[...entry.merged.entries()]
+          .sort((x, y) => rank(x[0]) - rank(y[0]))
+          .map(([title, parts]) => ({ commentator: C.commentatorShortName(title, b.title), html: parts.join('<br/>') })),
+      ];
     }
     return notes;
+  }
+
+  /** אות הסמן של עוגן: התווית מהמסד, ואם אין — הרכיב האחרון של ה-heRef (כמו באוצריא). */
+  function anchorLabel(label, heRef) {
+    const l = String(label || '').trim();
+    if (l) return l.replace(/\u2666/g, '\u25C6');
+    const tail = String(heRef || '').split(',').pop().trim();
+    const letters = tail.replace(/["׳״]/g, '');
+    return /^[א-ת]{1,4}$/.test(letters) ? tail : '';
   }
 
   async function commentatorRights(b) {
@@ -655,7 +687,14 @@
 
   function wire() {
     let t = null;
-    $('#searchInput').addEventListener('input', () => { clearTimeout(t); t = setTimeout(runSearch, 250); });
+    const input = $('#searchInput');
+    input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(runSearch, 250); });
+    // רשימת "נפתחו לאחרונה" מוצגת רק כשהשדה בפוקוס
+    input.addEventListener('focus', () => runSearch());
+    input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeSearch(); input.blur(); } });
+    document.addEventListener('mousedown', (e) => {
+      if (!e.target.closest('.search-row, #searchResults')) { clearTimeout(t); closeSearch(true); }
+    });
     $('#exportBtn').addEventListener('click', exportEpub);
     $('#cancelBtn').addEventListener('click', () => { state.cancelled = true; progress('מבטל…', null); });
     document.querySelector('.options').addEventListener('change', saveDraft);
@@ -674,7 +713,6 @@
     }
     renderBooks();
     await loadDraft();
-    runSearch();
   }
 
   wire();

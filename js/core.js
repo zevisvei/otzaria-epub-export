@@ -137,6 +137,45 @@
     return { kind: 'p', html: sanitizeInline(line, opts) };
   }
 
+  // מצייני מקום להזרקת סמני הערות לפני הניקוי: תווים פרטיים ששורדים את sanitizeInline כטקסט
+  const MARK_OPEN = '';
+  const MARK_CLOSE = '';
+  const MARK_RE = /(\d+)/g;
+
+  /**
+   * מזריק טקסט לשורת HTML גולמית לפי אופסט של *תווים גלויים* — תגים אינם נספרים
+   * ו-entity נספר כתו אחד (מוסכמת line.charCount של אוצריא לעוגני-מילה).
+   * ההזרקה היא לפני התו הגלוי הבא, כך שאינה נכנסת לתוך תג.
+   * points: [{ at, text }] ממוינים לפי at.
+   */
+  function injectAtVisibleOffsets(raw, points) {
+    let out = '';
+    let vis = 0;
+    let p = 0;
+    let i = 0;
+    let lastVisEnd = 0;
+    while (i < raw.length) {
+      if (raw[i] === '<' && /[a-zA-Z\/!]/.test(raw[i + 1] || '')) {
+        const close = raw.indexOf('>', i);
+        const end = close < 0 ? raw.length : close + 1;
+        out += raw.slice(i, end);
+        i = end;
+        continue;
+      }
+      while (p < points.length && points[p].at <= vis) out += points[p++].text;
+      const ent = raw[i] === '&' ? /^&(?:#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]*);/.exec(raw.slice(i, i + 12)) : null;
+      const len = ent ? ent[0].length : 1;
+      out += raw.slice(i, i + len);
+      i += len;
+      vis++;
+      lastVisEnd = out.length;
+    }
+    // עוגן מעבר לסוף השורה: אחרי התו הגלוי האחרון, לפני תגים סוגרים (כמו </h2>)
+    let rest = '';
+    while (p < points.length) rest += points[p++].text;
+    return out.slice(0, lastVisEnd) + rest + out.slice(lastVisEnd);
+  }
+
   // ══════════════════════════════════════════════════════════════════════
   // מספרים עבריים, שמות מפרשים
   // ══════════════════════════════════════════════════════════════════════
@@ -400,40 +439,56 @@
       const entries = tocByLine.get(lineNo);
       if (entries && cur.body.length && entries.some((e) => e.level <= splitLevel)) openFile();
       else if (cur.size > MAX_FILE_CHARS) openFile();
-      const parsed = parseLine(book.lines[i], opts);
       const anchor = `${prefix}l${lineNo}`;
       const idAttr = entries ? ` id="${anchor}"` : '';
       if (entries) for (const e of entries) addNav(e, cur.name, anchor);
       if (entries && cur.body.length === 0) cur.title = stripTags(entries[0].text) || book.title;
 
-      let html = parsed.html;
-      const lineNotes = book.notes && book.notes[lineNo];
+      // הערות מעוגנות (עם `at`) נכנסות במקומן בשורה; השאר — בסוף השורה
+      const lineNotes = ((book.notes && book.notes[lineNo]) || [])
+        .map((n) => ({ ...n, text: sanitizeInline(n.html, opts) }))
+        .filter((n) => n.text);
+      const anchored = lineNotes.filter((n) => Number.isInteger(n.at) && n.at >= 0).sort((x, y) => x.at - y.at);
+      const trailing = lineNotes.filter((n) => !anchored.includes(n));
+      const raw = anchored.length
+        ? injectAtVisibleOffsets(book.lines[i], anchored.map((n, k) => ({ at: n.at, text: `${MARK_OPEN}${k}${MARK_CLOSE}` })))
+        : book.lines[i];
+      const parsed = parseLine(raw, opts);
+
       const after = [];
-      if (lineNotes && lineNotes.length) {
-        for (const n of lineNotes) {
-          const who = `<b class="cm-who">${escapeXml(n.commentator)}</b>`;
-          const text = sanitizeInline(n.html, opts);
-          if (!text) continue;
-          if (notesMode === 'line') {
-            after.push(`<p class="cm">${who} ${text}</p>`);
-            continue;
-          }
-          noteSeq++;
-          cur.noteCount++;
-          const nid = `${prefix}n${noteSeq}`;
-          const rid = `${prefix}r${noteSeq}`;
-          const marker = hebNum(cur.noteCount);
-          if (notesMode === 'chapter') {
-            // הערות גלויות בסוף הפרק: קישורים רגילים, בלי epub:type, כדי שאף קורא לא יסתיר אותן
-            html += `<a class="noteref" id="${rid}" href="#${nid}">${marker}</a>`;
-            cur.notes.push(`<p class="cm" id="${nid}"><a class="noteback" href="#${rid}">${marker}</a> ${who} ${text}</p>`);
-          } else {
-            // הערות סיום (EPUB 3 / DPUB-ARIA): הטקסט בקובץ נפרד בסוף הספר, ונפתח כחלונית מעל הטקסט
-            html += `<a class="noteref" epub:type="noteref" role="doc-noteref" id="${rid}" href="${cur.notesName}#${nid}">${marker}</a>`;
-            cur.notes.push(`<li class="endnote" epub:type="endnote" id="${nid}"><p><a class="noteback" role="doc-backlink" href="${cur.name}#${rid}">${marker}</a> ${who} ${text}</p></li>`);
-          }
+      const refs = [];
+      for (const n of [...anchored, ...trailing]) {
+        const isAnchored = anchored.includes(n);
+        // סמן מעוגן: האות שהמקור מדפיס, למשל (א) לשער הציון; אחרת מספור רץ בפרק
+        const label = isAnchored && n.label ? `(${n.label})` : null;
+        const who = `<b class="cm-who">${escapeXml(n.commentator)}</b>`;
+        if (notesMode === 'line') {
+          refs.push(label ? `<span class="anchor-mark">${escapeXml(label)}</span>` : '');
+          after.push(`<p class="cm">${label ? `<span class="anchor-mark">${escapeXml(label)}</span> ` : ''}${who} ${n.text}</p>`);
+          continue;
+        }
+        noteSeq++;
+        // המספור הרץ רק להערות בלי אות מקור, כדי שלא ידלג על אותיות
+        if (!label) cur.noteCount++;
+        const nid = `${prefix}n${noteSeq}`;
+        const rid = `${prefix}r${noteSeq}`;
+        const marker = escapeXml(label || hebNum(cur.noteCount));
+        if (notesMode === 'chapter') {
+          // הערות גלויות בסוף הפרק: קישורים רגילים, בלי epub:type, כדי שאף קורא לא יסתיר אותן
+          refs.push(`<a class="noteref" id="${rid}" href="#${nid}">${marker}</a>`);
+          cur.notes.push(`<p class="cm" id="${nid}"><a class="noteback" href="#${rid}">${marker}</a> ${who} ${n.text}</p>`);
+        } else {
+          // הערות סיום (EPUB 3 / DPUB-ARIA): הטקסט בקובץ נפרד בסוף הספר, ונפתח כחלונית מעל הטקסט
+          refs.push(`<a class="noteref" epub:type="noteref" role="doc-noteref" id="${rid}" href="${cur.notesName}#${nid}">${marker}</a>`);
+          cur.notes.push(`<li class="endnote" epub:type="endnote" id="${nid}"><p><a class="noteback" role="doc-backlink" href="${cur.name}#${rid}">${marker}</a> ${who} ${n.text}</p></li>`);
         }
       }
+      // מחליפים את מצייני המקום בסמנים; מציין שנבלע (למשל בתוך <script>) — הסמן עובר לסוף השורה,
+      // כדי שלכל הערה יהיה תמיד קישור חוזר תקין
+      const placed = new Set();
+      let html = parsed.html.replace(MARK_RE, (m, k) => { placed.add(Number(k)); return refs[Number(k)] || ''; });
+      anchored.forEach((n, k) => { if (!placed.has(k)) html += refs[k]; });
+      for (let k = anchored.length; k < refs.length; k++) html += refs[k];
       if (!html && !idAttr && !after.length) continue;
       let el;
       if (parsed.kind === 'heading') {
@@ -796,7 +851,7 @@
   }
 
   const api = {
-    escapeXml, decodeEntities, stripTags, removeMarks, sanitizeInline, parseLine,
+    escapeXml, decodeEntities, stripTags, removeMarks, sanitizeInline, parseLine, injectAtVisibleOffsets,
     hebNum, commentatorShortName, tocRange, normalizeSourceKey, rightsFor,
     buildEpub, zip, crc32, nativeDeflateRaw, uuidV4, safeFileName, formatDateHe,
     MAX_FILE_CHARS,
