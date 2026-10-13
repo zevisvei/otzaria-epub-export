@@ -45,6 +45,10 @@
   לכל תיקייה דף שער משלה. ב-Word התיקיות הן רמות כותרת, וב-FB2 סעיפים עוטפים.
 - **קובץ נפרד לכל ספר:** כל הקבצים נארזים בארכיון ZIP אחד, ונשמרים בשמירה אחת.
 - **Word:** גודל עמוד (A4, A5, Letter, 6×9) ושוליים.
+- **ספרים חסומים לייצוא:** אותם קריטריונים של אוצריא — הרשימה שבגללה התוכנה חוסמת "ייצוא הספר המלא" לפורמט קל לעריכה (`assets/export_restricted_books.json`).
+  - ספר חסום לא נוסף לרשימה, ומפרש חסום אינו ניתן לבחירה. לפני הבנייה נבדקים שוב הספר וכל מפרשיו.
+  - **מאוצריא 0.9.99:** הבדיקה נעשית מול הרשימה העדכנית של התוכנה, דרך `library.getExportRestrictions` ([Otzaria/otzaria#2507](https://github.com/Otzaria/otzaria/pull/2507)).
+  - **בגרסאות קודמות:** נבדק העתק של הרשימה שבתוסף, `js/export-restricted.js`, שנוצר ע"י `tools/build_restricted.py`.
 - **כריכה** מצוירת, ושמירת הבחירות כטיוטה.
 
 ## מבנה
@@ -73,6 +77,8 @@ tools/make_icon.sh                                   # רינדור tools/icon.s
 לתצוגה בדפדפן עם גשר מדומה: `python3 -m http.server`, ואז לפתוח את `tools/harness.html`.
 
 ## פרסום
+
+התיאור המלא בחנות נלקח מ-`STORE_DESCRIPTION.txt`: טקסט פשוט, וירידות השורה נשמרות.
 
 `.github/workflows/release.yml` מאמת, בונה ומפרסם לחנות אוצריא בכל push ל-`main` שמעלה את `version` ב-`manifest.json`
 (ראו [פרסום אוטומטי ל-CI](https://github.com/Otzaria/otzaria/blob/dev/docs/plugin-sdk/README.md#פרסום-אוטומטי-ל-ci-github-action)).

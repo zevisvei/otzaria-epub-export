@@ -23,7 +23,7 @@ def main():
         for dirpath, dirnames, filenames in os.walk(ROOT):
             dirnames[:] = sorted(d for d in dirnames if d not in EXCLUDE_DIRS and not d.startswith('.'))
             for name in sorted(filenames):
-                if name.startswith('.') or name.endswith('.md'):
+                if name.startswith('.') or name.endswith('.md') or name == 'STORE_DESCRIPTION.txt':
                     continue
                 full = os.path.join(dirpath, name)
                 z.write(full, os.path.relpath(full, ROOT).replace(os.sep, '/'))

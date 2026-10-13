@@ -21,6 +21,7 @@
   }
   build('בראשית', 50, 20, { key: 'Sefaria', name: 'ספריא', url: 'https://www.sefaria.org/texts' });
   build('ספר החינוך', 8, 6, { key: 'wikiJewishBooksToOtzaria', name: 'אוצר הספרים היהודי השיתופי', url: 'https://wiki.jewishbooks.org.il/' });
+  build('שמירת שבת כהלכתה - א', 3, 4, { key: 'MoreBooks', name: 'ספרים פרטיים' });
   const byUid = (p) => Object.values(books).find((b) => (p.bookUid && `id:${b.id}` === p.bookUid) || b.title === p.bookId || b.id === p.id);
   const meta = (b) => ({ bookId: b.title, title: b.title, id: b.id, bookUid: `id:${b.id}`, type: 'text', source: 'library', categoryPath: '/תנך/תורה' });
   const ok = (data) => ({ success: true, data });
@@ -86,7 +87,7 @@
           return ok(t.substring(o, o + Math.min(5000, p.limit || 1000)));
         }
         case 'library.getCommentators': {
-          const list = [{ title: `רש"י על ${p.bookId}`, linkCount: 900 }, { title: `אבן עזרא על ${p.bookId}`, linkCount: 400 }, { title: 'שער הציון', linkCount: 300 }];
+          const list = [{ title: `רש"י על ${p.bookId}`, linkCount: 900 }, { title: `אבן עזרא על ${p.bookId}`, linkCount: 400 }, { title: 'שער הציון', linkCount: 300 }, { title: 'הערות על שמירת שבת כהלכתה - א', linkCount: 10 }];
           return ok(p.grouped ? { groups: [{ title: 'ראשונים', commentators: list.map((c) => c.title) }] } : { commentators: list });
         }
         case 'library.getLinks': {

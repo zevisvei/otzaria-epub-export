@@ -197,3 +197,5 @@ select.field { cursor: pointer; }
 .structure-row span { font-size: 0.85rem; color: var(--color-on-surface-variant); }
 .structure-row select { max-width: 18rem; }
 .result.folder { background: var(--color-secondary-container); color: var(--color-on-secondary-container); }
+
+.cm-item.restricted { opacity: 0.55; cursor: not-allowed; }

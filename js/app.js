@@ -5,7 +5,7 @@
 
   const C = window.EpubCore;
   const HAS_OTZ = typeof window.Otzaria !== 'undefined';
-  const VERSION = '1.4.0'; // יש לעדכן יחד עם manifest.json
+  const VERSION = '1.5.0'; // יש לעדכן יחד עם manifest.json
   const CHUNK = 5000; // תקרת library.getBookContent
   const LINKS_WINDOW = 200; // תקרת library.getLinks
   const LINK_CONTENT_BATCH = 25; // תקרת library.getLinkContent
@@ -128,6 +128,7 @@
     if (!books.length) { notifyError('אין בתיקייה ספרי טקסט'); return; }
     if (books.length > 40 && !(await confirmDlg('תיקייה גדולה', `בתיקייה „${folder.title}” יש ${books.length} ספרים. הייצוא עלול להימשך זמן רב ולהפיק קובץ גדול. להמשיך?`))) return;
     state.cancelled = false;
+    const skipped = [];
     try {
       for (let i = 0; i < books.length; i++) {
         checkCancel();
@@ -137,12 +138,14 @@
         if (state.books.some((x) => x.key === key)) continue;
         const added = await addBook({ ...b, title: b.title || b.bookId }, { quiet: true });
         if (added) added.groupPath = b.groupPath;
+        else if ((await restrictedAmong([b.title || b.bookId])).size) skipped.push(b.title || b.bookId);
       }
     } catch (e) {
       if (!(e && e.message === 'cancelled')) notifyError(`הוספת התיקייה נכשלה: ${(e && e.message) || e}`);
     } finally {
       $('#busy').hidden = true;
     }
+    if (skipped.length) notifyError(`${skipped.length} ספרים חסומים לייצוא ולא נוספו: ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? '…' : ''}`);
     if (!$('#optTitle').value.trim()) $('#optTitle').value = folder.title;
     renderBooks();
     saveDraft();
@@ -161,9 +164,33 @@
     $('#searchResults').replaceChildren();
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // ספרים חסומים לייצוא — אותה רשימה שבגללה אוצריא חוסמת "ייצוא הספר המלא"
+  // לפורמט קל לעריכה (assets/export_restricted_books.json)
+  // ══════════════════════════════════════════════════════════════════════
+  const normTitle = (t) => String(t || '').trim().replace(/\s+/g, ' ');
+
+  /**
+   * אילו מהכותרות חסומות לייצוא. מאוצריא 0.9.99 — library.getExportRestrictions
+   * (הרשימה העדכנית של התוכנה); בגרסאות קודמות — העתק הרשימה שבתוסף (js/export-restricted.js).
+   */
+  async function restrictedAmong(titles) {
+    const list = [...new Set(titles.map(normTitle).filter(Boolean))];
+    if (!list.length) return new Set();
+    const r = await call('library.getExportRestrictions', { titles: list });
+    if (r.success && r.data && Array.isArray(r.data.restricted)) return new Set(r.data.restricted.map(normTitle));
+    const fallback = new Set((window.EPUB_EXPORT_RESTRICTED || []).map(normTitle));
+    return new Set(list.filter((t) => fallback.has(t)));
+  }
+  const RESTRICTED_MSG = 'הספר חסום לייצוא לפורמט קל לעריכה (כמו "ייצוא הספר המלא" באוצריא). אפשר להדפיס אותו מאוצריא.';
+
   async function addBook(meta, opts) {
     const key = meta.bookUid || `${meta.bookId}#${meta.id ?? ''}`;
-    if (state.books.some((b) => b.key === key)) { notifyError('הספר כבר נמצא ברשימה'); return; }
+    if (state.books.some((b) => b.key === key)) { if (!opts || !opts.quiet) notifyError('הספר כבר נמצא ברשימה'); return null; }
+    if ((await restrictedAmong([meta.title || meta.bookId])).size) {
+      if (!opts || !opts.quiet) notifyError(`${meta.title || meta.bookId}: ${RESTRICTED_MSG}`);
+      return null;
+    }
     const book = {
       key, bookId: meta.bookId || meta.title, bookUid: meta.bookUid, id: meta.id,
       title: meta.title || meta.bookId, details: null, rights: C.rightsFor(null), toc: [],
@@ -328,14 +355,15 @@
           if (!items.length) continue;
           if (g.title) grid.append(el('div', { class: 'cm-group', text: g.title }));
           for (const c of items) {
-            const cb = el('input', { type: 'checkbox', checked: b.commentators.some((x) => x.title === c.title) });
+            const cb = el('input', { type: 'checkbox', checked: b.commentators.some((x) => x.title === c.title), disabled: !!c.restricted });
             cb.addEventListener('change', () => {
               if (cb.checked) b.commentators.push({ title: c.title });
               else b.commentators = b.commentators.filter((x) => x.title !== c.title);
               renderFonts();
               saveDraft();
             });
-            grid.append(el('label', { class: 'cm-item' }, cb, C.commentatorShortName(c.title, b.title),
+            grid.append(el('label', { class: `cm-item${c.restricted ? ' restricted' : ''}`, title: c.restricted ? 'חסום לייצוא' : null }, cb, C.commentatorShortName(c.title, b.title),
+              c.restricted ? el('span', { class: 'count', text: '(חסום לייצוא)' }) : '',
               c.linkCount ? el('span', { class: 'count', text: `(${c.linkCount})` }) : ''));
           }
         }
@@ -368,6 +396,10 @@
     } else {
       groups.push({ title: '', items: [...items].sort((a, x) => (x.linkCount || 0) - (a.linkCount || 0)) });
     }
+    // מפרש חסום לייצוא — מוצג אך אינו ניתן לבחירה (כמו במסך ההדפסה של אוצריא)
+    const blocked = await restrictedAmong(items.map((c) => c.title));
+    for (const c of items) c.restricted = blocked.has(normTitle(c.title));
+    b.commentators = b.commentators.filter((c) => !blocked.has(normTitle(c.title)));
     b.cmList = { items, groups };
   }
 
@@ -835,6 +867,12 @@
   async function exportEpub() {
     const opts = readOptions();
     state.cancelled = false;
+    // בדיקה אחרונה: הספרים וכל המפרשים שנבחרו (כמו blocksEditableExport באוצריא)
+    const blocked = await restrictedAmong(state.books.flatMap((b) => [b.title, ...b.commentators.map((c) => c.title)]));
+    if (blocked.size) {
+      notifyError(`הייצוא נחסם — ${[...blocked].join(', ')}: ${RESTRICTED_MSG}`);
+      return;
+    }
     const books = [];
     try {
       for (let i = 0; i < state.books.length; i++) {
