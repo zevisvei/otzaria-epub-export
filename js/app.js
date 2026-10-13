@@ -5,7 +5,7 @@
 
   const C = window.EpubCore;
   const HAS_OTZ = typeof window.Otzaria !== 'undefined';
-  const VERSION = '1.2.0'; // יש לעדכן יחד עם manifest.json
+  const VERSION = '1.3.0'; // יש לעדכן יחד עם manifest.json
   const CHUNK = 5000; // תקרת library.getBookContent
   const LINKS_WINDOW = 200; // תקרת library.getLinks
   const LINK_CONTENT_BATCH = 25; // תקרת library.getLinkContent
@@ -86,13 +86,69 @@
     items = items.filter((b) => !b.type || b.type === 'text').slice(0, 30);
     const seen = new Set();
     items = items.filter((b) => { const k = b.bookUid || b.bookId; if (seen.has(k)) return false; seen.add(k); return true; });
+    const folders = q ? (await findFolders(q)).slice(0, 8) : [];
+    if (seq !== searchSeq) return;
     box.replaceChildren(
-      label ? el('div', { class: 'results-label', text: label }) : '',
+      ...folders.map((f) => el('div', { class: 'result folder' },
+        el('span', { class: 'result-title', text: `📁 ${f.title}` }),
+        el('span', { class: 'result-path', text: f.path.replace(/^\//, '').replace(/\//g, ' › ') }),
+        el('button', { class: 'btn', onclick: () => { closeSearch(); addFolder(f); } }, 'הוספת התיקייה'))),
+      label && !folders.length ? el('div', { class: 'results-label', text: label }) : '',
       ...items.map((b) => el('div', { class: 'result' },
         el('span', { class: 'result-title', text: b.title || b.bookId }),
         b.categoryPath ? el('span', { class: 'result-path', text: b.categoryPath.replace(/^\//, '').replace(/\//g, ' › ') }) : '',
         el('button', { class: 'btn', onclick: () => { closeSearch(); addBook(b); } }, 'הוספה'))),
     );
+  }
+
+  // ── תיקיות בספרייה: ייצוא תיקייה שלמה (כולל תתי-תיקיות) לקובץ אחד ──
+  let folderCache = null;
+  async function findFolders(q) {
+    if (!folderCache) {
+      const r = await call('library.getTree', { includeBooks: false });
+      folderCache = [];
+      const walk = (node) => {
+        for (const c of (node && node.categories) || []) { folderCache.push({ title: c.title, path: c.path }); walk(c); }
+      };
+      if (r.success && r.data) walk(r.data);
+    }
+    return folderCache.filter((f) => f.title.includes(q));
+  }
+
+  async function addFolder(folder) {
+    const r = await call('library.getTree', { path: folder.path, includeBooks: true, types: ['text'] });
+    const books = [];
+    const walk = (node) => {
+      for (const b of (node && node.books) || []) if (!b.type || b.type === 'text') books.push(b);
+      for (const c of (node && node.categories) || []) walk(c);
+    };
+    if (r.success && r.data) walk(r.data);
+    if (!books.length) { notifyError('אין בתיקייה ספרי טקסט'); return; }
+    if (books.length > 40 && !(await confirmDlg('תיקייה גדולה', `בתיקייה „${folder.title}” יש ${books.length} ספרים. הייצוא עלול להימשך זמן רב ולהפיק קובץ גדול. להמשיך?`))) return;
+    state.cancelled = false;
+    try {
+      for (let i = 0; i < books.length; i++) {
+        checkCancel();
+        progress(`מוסיף ספרים מ„${folder.title}”… (${i + 1}/${books.length})`, i / books.length);
+        const b = books[i];
+        const key = b.bookUid || `${b.bookId}#${b.id ?? ''}`;
+        if (state.books.some((x) => x.key === key)) continue;
+        await addBook({ ...b, title: b.title || b.bookId }, { quiet: true });
+      }
+    } catch (e) {
+      if (!(e && e.message === 'cancelled')) notifyError(`הוספת התיקייה נכשלה: ${(e && e.message) || e}`);
+    } finally {
+      $('#busy').hidden = true;
+    }
+    if (!$('#optTitle').value.trim()) $('#optTitle').value = folder.title;
+    renderBooks();
+    saveDraft();
+  }
+
+  async function confirmDlg(title, content) {
+    if (!HAS_OTZ) return window.confirm(`${title}\n${content}`);
+    const r = await call('ui.showConfirm', { title, content });
+    return !!(r && r.success && r.data && r.data.confirmed);
   }
 
   /** סוגר את רשימת התוצאות ומנקה את השדה (גם מבטל חיפוש שעוד רץ). */
@@ -102,25 +158,44 @@
     $('#searchResults').replaceChildren();
   }
 
-  async function addBook(meta) {
+  async function addBook(meta, opts) {
     const key = meta.bookUid || `${meta.bookId}#${meta.id ?? ''}`;
     if (state.books.some((b) => b.key === key)) { notifyError('הספר כבר נמצא ברשימה'); return; }
     const book = {
       key, bookId: meta.bookId || meta.title, bookUid: meta.bookUid, id: meta.id,
       title: meta.title || meta.bookId, details: null, rights: C.rightsFor(null), toc: [],
       from: null, to: null, commentators: [], cmList: null, cmOpen: false, cmFilter: '',
+      mainToc: [], altStructures: [], structure: '',
     };
     state.books.push(book);
-    renderBooks();
-    const [details, toc] = await Promise.all([
+    if (!opts || !opts.quiet) renderBooks();
+    const [details, toc, alts] = await Promise.all([
       call('library.getBookDetails', identity(book)),
       call('library.getBookToc', identity(book)),
+      call('library.listBookAltStructures', { bookId: book.bookId }),
     ]);
     if (details.success && details.data) {
       book.details = details.data;
       book.rights = C.rightsFor(details.data.textSource);
     }
-    book.toc = toc.success && Array.isArray(toc.data) ? toc.data : [];
+    book.mainToc = toc.success && Array.isArray(toc.data) ? toc.data : [];
+    book.toc = book.mainToc;
+    book.altStructures = alts.success && Array.isArray(alts.data) ? alts.data : [];
+    if (!opts || !opts.quiet) { renderBooks(); saveDraft(); }
+    return book;
+  }
+
+  /** החלפת מבנה תוכן העניינים (למשל פרשות במקום פרקים) — getBookAltToc. */
+  async function setStructure(b, key) {
+    b.structure = key;
+    b.from = null;
+    b.to = null;
+    if (!key) {
+      b.toc = b.mainToc;
+    } else {
+      const r = await call('library.getBookAltToc', { bookId: b.bookId, structureKey: key });
+      b.toc = r.success && Array.isArray(r.data) ? r.data : b.mainToc;
+    }
     renderBooks();
     saveDraft();
   }
@@ -193,10 +268,23 @@
         el('button', { class: 'icon-btn', title: 'הזזה למעלה', 'aria-label': 'הזזה למעלה', disabled: idx === 0, onclick: () => move(-1) }, '▲'),
         el('button', { class: 'icon-btn', title: 'הזזה למטה', 'aria-label': 'הזזה למטה', disabled: idx === state.books.length - 1, onclick: () => move(1) }, '▼'),
         el('button', { class: 'icon-btn', title: 'הסרה', 'aria-label': 'הסרה', onclick: () => { state.books.splice(idx, 1); renderBooks(); saveDraft(); } }, '✕')),
+      b.altStructures.length ? structureSelect(b) : '',
       b.toc.length
         ? el('div', { class: 'range-row' }, el('span', { text: 'מ:' }), from, el('span', { text: 'עד:' }), to)
         : el('div', { class: 'muted small', text: 'לספר אין תוכן עניינים — ייוצא הספר כולו.' }),
       commentatorsBlock(b));
+  }
+
+  function structureSelect(b) {
+    const sel = el('select', { class: 'field' });
+    sel.append(el('option', { value: '' }, 'תוכן העניינים הרגיל'));
+    for (const a of b.altStructures) {
+      const o = el('option', { value: a.key }, a.heTitle || a.title || a.key);
+      if (a.key === b.structure) o.selected = true;
+      sel.append(o);
+    }
+    sel.addEventListener('change', () => setStructure(b, sel.value));
+    return el('label', { class: 'structure-row' }, el('span', { text: 'חלוקה:' }), sel);
   }
 
   function commentatorsBlock(b) {
@@ -281,6 +369,7 @@
     ['#optRemoveTeamim', 'removeTeamim'], ['#optRemoveNikud', 'removeNikud'],
     ['#optRemovePunctuation', 'removePunctuation'], ['#optContinuous', 'continuous'],
     ['#optMarkPerCommentator', 'markPerCommentator'],
+    ['#optPersonalNotes', 'personalNotes'], ['#optBookmarks', 'bookmarks'], ['#optSplitBooks', 'splitBooks'],
   ];
 
   function readOptions() {
@@ -288,6 +377,8 @@
       title: $('#optTitle').value.trim(),
       format: $('#optFormat').value,
       holyNames: $('#optHolyNames').value,
+      pageSize: $('#optPageSize').value,
+      margins: $('#optMargins').value,
       notesMode: (document.querySelector('input[name="notesMode"]:checked') || {}).value || 'popup',
       bodyFont: $('#optBodyFont').value,
       notesFontId: $('#optNotesFont').value,
@@ -301,7 +392,7 @@
     if (!o) return;
     if (typeof o.title === 'string') $('#optTitle').value = o.title;
     for (const [id, k] of CHECKS) if (typeof o[k] === 'boolean') $(id).checked = o[k];
-    for (const [id, k] of [['#optFormat', 'format'], ['#optHolyNames', 'holyNames']]) {
+    for (const [id, k] of [['#optFormat', 'format'], ['#optHolyNames', 'holyNames'], ['#optPageSize', 'pageSize'], ['#optMargins', 'margins']]) {
       if (o[k] && [...$(id).options].some((x) => x.value === o[k])) $(id).value = o[k];
     }
     const radio = document.querySelector(`input[name="notesMode"][value="${o.notesMode}"]`);
@@ -436,6 +527,7 @@
       fb2: 'FictionBook 2 — הערות כחלונית ב-KOReader, FBReader ו-Moon+ Reader.',
     };
     $('#formatHint').textContent = hints[$('#optFormat').value] || '';
+    $('#docxOptions').hidden = $('#optFormat').value !== 'docx';
   }
 
   let draftTimer = null;
@@ -443,7 +535,7 @@
     clearTimeout(draftTimer);
     draftTimer = setTimeout(() => {
       const books = state.books.map((b) => ({
-        bookId: b.bookId, bookUid: b.bookUid, id: b.id, title: b.title,
+        bookId: b.bookId, bookUid: b.bookUid, id: b.id, title: b.title, structure: b.structure,
         from: b.from, to: b.to, commentators: b.commentators.map((c) => c.title),
         // נשמרות גם הכותרות, כדי לזהות שתוכן העניינים השתנה בעדכון ספרייה
         fromText: b.from != null && b.toc[b.from] ? b.toc[b.from].text : null,
@@ -463,6 +555,7 @@
       await addBook({ bookId: s.bookId, bookUid: s.bookUid, id: s.id, title: s.title });
       const b = state.books[state.books.length - 1];
       if (!b) continue;
+      if (s.structure && b.altStructures.some((a) => a.key === s.structure)) await setStructure(b, s.structure);
       const pick = (i, text) => (i != null && b.toc[i] && (text == null || b.toc[i].text === text) ? i : null);
       b.from = pick(s.from, s.fromText);
       b.to = pick(s.to, s.toText);
@@ -603,6 +696,35 @@
     return /^[א-ת]{1,4}$/.test(letters) ? tail : '';
   }
 
+  /**
+   * ההערות האישיות של המשתמש (notes.list; lineNumber 1-based) — כהערה נוספת בשורה.
+   * כשהגשר מוסר anchorStart/anchorEnd (אופסט בשורה הגולמית) — ההערה במקום המדויק.
+   */
+  async function addPersonalNotes(b, notes, start, end) {
+    const r = await call('notes.list', { bookUid: b.bookUid, bookId: b.bookId });
+    const list = r.success && Array.isArray(r.data) ? r.data : [];
+    for (const n of list) {
+      const line = Number(n.lineNumber) - 1;
+      if (!(line >= start && line < end)) continue;
+      const text = String(n.contentPlain || n.content || '').trim();
+      if (!text) continue;
+      const html = C.escapeXml(text).replace(/\n/g, '<br/>');
+      const note = { commentator: 'הערה אישית', html, personal: true, ref: n.anchorText ? `הערה אישית — „${n.anchorText}”` : 'הערה אישית' };
+      if (Number.isInteger(n.anchorEnd)) note.rawAt = n.anchorEnd;
+      (notes[line] = notes[line] || []).push(note);
+    }
+  }
+
+  /** הסימניות של המשתמש בטווח (bookmarks.list) — ענף "סימניות" בתוכן העניינים. */
+  async function loadBookmarks(b, start, end) {
+    const r = await call('bookmarks.list', { limit: 1000 });
+    const list = r.success && Array.isArray(r.data) ? r.data : [];
+    return list
+      .filter((m) => (m.bookUid && b.bookUid ? m.bookUid === b.bookUid : (m.title === b.title || m.bookId === b.bookId)))
+      .filter((m) => Number.isInteger(m.index) && m.index >= start && m.index < end)
+      .map((m) => ({ index: m.index, label: [m.label, m.ref].filter(Boolean).join(' — ') || b.title }));
+  }
+
   async function commentatorRights(b) {
     const out = [];
     for (const c of b.commentators) {
@@ -714,6 +836,8 @@
         const lines = await loadLines(b, endHint, label);
         const r = C.tocRange(toc, b.from, b.to, lines.length);
         const notes = b.commentators.length ? await loadNotes(b, r.start, r.end, label) : {};
+        if (opts.personalNotes) await addPersonalNotes(b, notes, r.start, r.end);
+        const bookmarks = opts.bookmarks ? await loadBookmarks(b, r.start, r.end) : [];
         books.push({
           title: b.title,
           rangeLabel: rangeLabel(b),
@@ -724,53 +848,37 @@
           toc: toc.filter((e) => e.index >= r.start && e.index < r.end),
           notes,
           commentators: b.commentators.length ? await commentatorRights(b) : [],
+          bookmarks,
           // "פסוקים ברצף" רק בתנ"ך ובתלמוד, כמו מצב הקריאה הרציף באוצריא
           continuous: !!opts.continuous && isContinuousCategory(b.details),
         });
       }
       checkCancel();
       progress('בונה את הקובץ…', 0.9);
-      const title = opts.title || defaultTitle();
-      const single = books.length === 1 ? books[0] : null;
-      const creators = [...new Set(books.flatMap((b) => (b.details && b.details.authors) || []))];
-      const commentatorNames = [...new Set(books.flatMap((b) => b.commentators.map((c) => c.name)))];
-      const subtitle = single ? single.rangeLabel : '';
-      const usesNotes = books.some((b) => Object.keys(b.notes).length);
-      const spec = {
-        meta: {
-          title,
-          subtitle,
-          creators,
-          contributors: commentatorNames,
-          description: single && single.details && single.details.shortDescription ? C.stripTags(single.details.shortDescription) : '',
-          subjects: [...new Set(books.flatMap((b) => {
-            const d = b.details || {};
-            return [...(d.categoryPath || '').split('/').filter(Boolean), ...(d.topics || [])];
-          }))].slice(0, 12),
-          identifier: `urn:uuid:${C.uuidV4((a) => crypto.getRandomValues(a))}`,
-          date: new Date(),
-          appVersion: state.boot.appVersion,
-          generatorVersion: VERSION,
-        },
-        books,
-        commentatorNames,
-        options: { ...opts, kepub: opts.format === 'kepub', notesFont: 'book' },
-        css: window.EPUB_BOOK_CSS,
-        cover: opts.cover ? await drawCover(title, subtitle, creators.join(', ')) : null,
-      };
-      await applyFonts(spec, opts, commentatorNames, usesNotes);
-      checkCancel();
       const fmt = FORMATS[opts.format] || FORMATS.epub;
-      let bytes;
-      if (opts.format === 'fb2') {
-        bytes = new TextEncoder().encode(window.EpubFormats.buildFb2(spec));
+      if (opts.splitBooks && books.length > 1) {
+        // קובץ נפרד לכל ספר, כולם בארכיון ZIP אחד (שמירה אחת במקום דיאלוג לכל ספר)
+        const entries = [];
+        const used = new Set();
+        for (let i = 0; i < books.length; i++) {
+          checkCancel();
+          progress(`בונה (${i + 1}/${books.length}) ${books[i].title}…`, 0.9 * (i / books.length));
+          const one = await renderOutput([books[i]], opts, '');
+          let name = `${C.safeFileName(books[i].title)}.${fmt.ext}`;
+          for (let k = 2; used.has(name); k++) name = `${C.safeFileName(books[i].title)} (${k}).${fmt.ext}`;
+          used.add(name);
+          entries.push({ path: name, data: one, store: true });
+        }
+        const zipped = await C.zip(entries, null);
+        checkCancel();
+        progress('שמירה…', 1);
+        await saveFile(zipped, C.safeFileName(opts.title || defaultTitle()), FORMATS.zip);
       } else {
-        const files = opts.format === 'docx' ? window.EpubFormats.buildDocx(spec) : C.buildEpub(spec);
-        bytes = await C.zip(files, C.nativeDeflateRaw(), (n, total) => progress('אורז…', 0.9 + 0.08 * (n / total)));
+        const bytes = await renderOutput(books, opts, opts.title || defaultTitle());
+        checkCancel();
+        progress('שמירה…', 1);
+        await saveFile(bytes, C.safeFileName(opts.title || defaultTitle()), fmt);
       }
-      checkCancel();
-      progress('שמירה…', 1);
-      await saveFile(bytes, C.safeFileName(title), fmt);
     } catch (e) {
       if (e && e.message === 'cancelled') notify('הייצוא בוטל');
       else notifyError(`הייצוא נכשל: ${(e && e.message) || e}`);
@@ -779,7 +887,45 @@
     }
   }
 
+  /** בונה קובץ אחד (בפורמט שנבחר) מרשימת ספרים שכבר נטענו. מחזיר Uint8Array. */
+  async function renderOutput(books, opts, titleOverride) {
+    const title = titleOverride || (books.length === 1 ? books[0].title : defaultTitle());
+    const single = books.length === 1 ? books[0] : null;
+    const creators = [...new Set(books.flatMap((b) => (b.details && b.details.authors) || []))];
+    const commentatorNames = [...new Set(books.flatMap((b) => b.commentators.map((c) => c.name)))];
+    const subtitle = single ? single.rangeLabel : '';
+    const usesNotes = books.some((b) => Object.keys(b.notes).length);
+    const spec = {
+      meta: {
+        title,
+        subtitle,
+        creators,
+        contributors: commentatorNames,
+        description: single && single.details && single.details.shortDescription ? C.stripTags(single.details.shortDescription) : '',
+        subjects: [...new Set(books.flatMap((b) => {
+          const d = b.details || {};
+          return [...(d.categoryPath || '').split('/').filter(Boolean), ...(d.topics || [])];
+        }))].slice(0, 12),
+        identifier: `urn:uuid:${C.uuidV4((a) => crypto.getRandomValues(a))}`,
+        date: new Date(),
+        appVersion: state.boot.appVersion,
+        generatorVersion: VERSION,
+      },
+      books,
+      commentatorNames,
+      options: { ...opts, kepub: opts.format === 'kepub', notesFont: 'book' },
+      css: window.EPUB_BOOK_CSS,
+      cover: opts.cover ? await drawCover(title, subtitle, creators.join(', ')) : null,
+    };
+    await applyFonts(spec, opts, commentatorNames, usesNotes);
+    checkCancel();
+    if (opts.format === 'fb2') return new TextEncoder().encode(window.EpubFormats.buildFb2(spec));
+    const files = opts.format === 'docx' ? window.EpubFormats.buildDocx(spec) : C.buildEpub(spec);
+    return C.zip(files, C.nativeDeflateRaw(), (n, total) => progress('אורז…', 0.9 + 0.08 * (n / total)));
+  }
+
   const FORMATS = {
+    zip: { ext: 'zip', mime: 'application/zip', title: 'שמירת ארכיון הספרים' },
     epub: { ext: 'epub', mime: 'application/epub+zip', title: 'שמירת ספר EPUB' },
     kepub: { ext: 'kepub.epub', mime: 'application/epub+zip', title: 'שמירת ספר Kobo' },
     docx: { ext: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', title: 'שמירת מסמך Word' },

@@ -89,6 +89,8 @@ aside.footnote p { margin: 0; }
 p.note-head { margin: 0 0 0.25em; padding-bottom: 0.25em; border-bottom: 1px solid #c9c2b3; font-size: 0.8em; font-weight: bold; color: #3d5a99; }
 p.note-head a { color: inherit; text-decoration: none; }
 p.note-text { margin: 0; }
+/* הערה אישית של הקורא — מסומנת בקו צד, להבדיל מהמפרשים */
+aside.personal p.note-text, li.personal p.note-text, p.cm.personal { border-right: 3px solid #d4a017; padding-right: 0.4em; }
 
 /* הערות סיום (נפתחות כחלונית) */
 section.endnotes { font-size: 0.9em; line-height: 1.5; }
@@ -145,6 +147,12 @@ table.col-table th { width: 7em; font-weight: bold; white-space: nowrap; }
 .col-desc { margin: 0.5em 0; }
 .col-notice { margin-top: 1.6em; padding-top: 0.6em; border-top: 1px solid #999; font-size: 0.9em; }
 .col-notice p { margin: 0 0 0.6em; }
+
+/* ── הסימניות שלי ── */
+section.bookmarks { text-align: right; }
+section.bookmarks ol { list-style: none; padding: 0; }
+section.bookmarks li { margin: 0.35em 0; }
+section.bookmarks a { color: inherit; }
 
 /* ── שער פנימי לכל ספר (קובץ מרובה ספרים) ── */
 body.part-body { text-align: center; }

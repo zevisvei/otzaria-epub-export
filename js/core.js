@@ -211,6 +211,18 @@
   const MARK_CLOSE = '';
   const MARK_RE = /(\d+)/g;
 
+  /** אופסט גולמי בשורה (כולל תגים) ← מספר התווים הגלויים שלפניו. */
+  function visibleOffsetAt(raw, rawAt) {
+    let vis = 0;
+    for (let i = 0; i < raw.length && i < rawAt;) {
+      if (raw[i] === '<' && /[a-zA-Z\/!]/.test(raw[i + 1] || '')) { const c = raw.indexOf('>', i); i = c < 0 ? raw.length : c + 1; continue; }
+      const ent = raw[i] === '&' ? /^&(?:#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]*);/.exec(raw.slice(i, i + 12)) : null;
+      i += ent ? ent[0].length : 1;
+      vis++;
+    }
+    return vis;
+  }
+
   /**
    * מזריק טקסט לשורת HTML גולמית לפי אופסט של *תווים גלויים* — תגים אינם נספרים
    * ו-entity נספר כתו אחד (מוסכמת line.charCount של אוצריא לעוגני-מילה).
@@ -555,10 +567,15 @@
     const notes = ((book.notes && book.notes[lineNo]) || [])
       .map((n) => ({ ...n, text: sanitizeInline(n.html, opts) }))
       .filter((n) => n.text);
+    // עוגן גולמי (rawAt — אופסט בשורה הגולמית, כמו anchorEnd של הערה אישית) מומר לתווים גלויים
+    for (const n of notes) {
+      if (!Number.isInteger(n.at) && Number.isInteger(n.rawAt) && n.rawAt >= 0) n.at = visibleOffsetAt(book.lines[i], n.rawAt);
+    }
     const anchored = notes.filter((n) => Number.isInteger(n.at) && n.at >= 0).sort((x, y) => x.at - y.at);
     const trailing = notes.filter((n) => !anchored.includes(n));
     const ordered = [...anchored, ...trailing].map((n, k) => ({
       commentator: n.commentator,
+      personal: !!n.personal,
       ref: n.ref || '',
       text: n.text,
       anchored: k < anchored.length,
@@ -595,6 +612,7 @@
     for (let i = 0; i < book.lines.length; i++) {
       const m = lineModel(book, i, opts);
       m.entries = tocByLine.get(m.lineNo) || null;
+      m.lineNos = [m.lineNo];
       if (!book.continuous || m.kind === 'heading' || m.entries || !m.html.trim()) {
         flush();
         out.push(m);
@@ -604,6 +622,7 @@
       const shift = merged.notes.length;
       merged.html += ` ${m.html.replace(MARK_RE, (x, k) => `${MARK_OPEN}${Number(k) + shift}${MARK_CLOSE}`)}`;
       merged.notes = merged.notes.concat(m.notes);
+      merged.lineNos.push(m.lineNo);
     }
     flush();
     return out;
@@ -617,6 +636,13 @@
   function renderBook(book, bIdx, opts, multi) {
     const files = [];
     const navRoots = [];
+    const bookmarkNav = [];
+    const bookmarksByLine = new Map();
+    for (const bm of book.bookmarks || []) {
+      const list = bookmarksByLine.get(bm.index) || [];
+      list.push(bm);
+      bookmarksByLine.set(bm.index, list);
+    }
     const levels = book.toc.map((e) => e.level);
     const minLevel = levels.length ? Math.min(...levels) : 1;
     // מתחילים קובץ חדש בכותרות העליונות (ובאחת מתחתיהן אם העליונה היא רק שם הספר)
@@ -653,10 +679,13 @@
     for (const m of bookModels(book, opts)) {
       const lineNo = m.lineNo;
       const entries = m.entries;
+      // סימנייה על שורה שאוחדה לפסקה (פסוקים ברצף) — מצביעה על הפסקה
+      const marks = m.lineNos.flatMap((n) => bookmarksByLine.get(n) || []);
       if (entries && cur.body.length && entries.some((e) => e.level <= splitLevel)) openFile();
       else if (cur.size > MAX_FILE_CHARS) openFile();
       const anchor = `${prefix}l${lineNo}`;
-      const idAttr = entries ? ` id="${anchor}"` : '';
+      const idAttr = entries || marks.length ? ` id="${anchor}"` : '';
+      for (const bm of marks) bookmarkNav.push({ label: bm.label, href: `${cur.name}#${anchor}`, children: [] });
       if (entries) for (const e of entries) addNav(e, cur.name, anchor);
       if (entries && cur.body.length === 0) cur.title = stripTags(entries[0].text) || book.title;
 
@@ -666,7 +695,7 @@
         const mk = notesMode === 'line' ? null : noteMarker(n, cur.counters, opts);
         const lineMark = n.letter ? noteMarker(n, {}, opts).text : null;
         const mkCls = (base) => `${base}${mk && mk.variant != null ? ` mk-v${mk.variant}` : ''}`;
-        const fontCls = opts.fontClassOf && opts.fontClassOf[n.commentator] ? ` ${opts.fontClassOf[n.commentator]}` : '';
+        const fontCls = (opts.fontClassOf && opts.fontClassOf[n.commentator] ? ` ${opts.fontClassOf[n.commentator]}` : '') + (n.personal ? ' personal' : '');
         const who = `<b class="cm-who">${escapeXml(n.commentator)}</b>`;
         // כמו חלונית התצוגה המקדימה של אוצריא: כותרת ההפניה המלאה, קו, ואז הטקסט
         const noteBody = (back) => `<p class="note-head">${back} ${escapeXml(n.ref || n.commentator)}</p><p class="note-text">${n.text}</p>`;
@@ -739,7 +768,8 @@
     const names = new Set(docs.map((d) => d.name));
     const fix = (nodes) => nodes.forEach((n) => { if (!names.has(n.href.split('#')[0])) n.href = `${docs[0].name}`; fix(n.children); });
     fix(navRoots);
-    return { docs, noteDocs, navRoots, noteCount: noteSeq };
+    fix(bookmarkNav);
+    return { docs, noteDocs, navRoots, bookmarkNav, noteCount: noteSeq };
   }
 
   function partPage(book, bIdx) {
@@ -887,8 +917,11 @@
     const navId = 'nav';
     items.push({ id: navId, href: 'text/nav.xhtml', type: 'application/xhtml+xml', props: 'nav' });
 
+    // סוף החלק הקדמי — לשם נכנס דף הסימניות אחרי עיבוד הספרים
+    const frontEnd = { out: out.length, items: items.length, spine: spine.length, nav: navTree.length };
     let firstBody = null;
     const allNoteDocs = [];
+    const allBookmarks = [];
     spec.books.forEach((book, bIdx) => {
       let bookNode = null;
       if (multi) {
@@ -905,7 +938,20 @@
       else if (r.navRoots.length) navTree.push(...r.navRoots);
       else if (r.docs.length) navTree.push({ label: book.title, href: r.docs[0].name, children: [] });
       if (r.noteDocs.length) allNoteDocs.push({ book, docs: r.noteDocs });
+      if (r.bookmarkNav.length) allBookmarks.push({ book, nodes: r.bookmarkNav });
     });
+    // הסימניות של המשתמש: דף "הסימניות שלי" בחלק הקדמי (אחרי דף הזכויות), עם קישורים.
+    // לא ענף בתוכן העניינים — ה-toc חייב להיות בסדר הקריאה (NAV-011) וה-NCX בלי יעדים כפולים.
+    if (allBookmarks.length) {
+      const list = allBookmarks.map((x) => `${multi ? `<h2>${escapeXml(x.book.title)}</h2>\n` : ''}<ol>\n${x.nodes.map((n) => `<li><a href="${escapeXml(n.href)}">${escapeXml(n.label)}</a></li>`).join('\n')}\n</ol>`).join('\n');
+      const doc = xhtmlDoc('הסימניות שלי', `<section class="bookmarks" epub:type="frontmatter">\n<h1>הסימניות שלי</h1>\n${list}\n</section>`, { bodyClass: 'front' });
+      itemSeq++;
+      const id = `x${itemSeq}`;
+      out.splice(frontEnd.out, 0, { path: 'OEBPS/text/bookmarks.xhtml', data: doc });
+      items.splice(frontEnd.items, 0, { id, href: 'text/bookmarks.xhtml', type: 'application/xhtml+xml' });
+      spine.splice(frontEnd.spine, 0, { id });
+      navTree.splice(frontEnd.nav, 0, { label: 'הסימניות שלי', href: 'bookmarks.xhtml', children: [] });
+    }
     // הערות הסיום בסוף ה-spine ומחוץ לזרם הקריאה (linear="no"): נפתחות רק מהקישור בטקסט
     for (const { book, docs } of allNoteDocs) {
       for (const d of docs) addXhtml(d.name, d.content, undefined, false);
@@ -1102,7 +1148,7 @@
   }
 
   const api = {
-    fontEmbeddingAllowed, fontMediaType, fontBytesFromCss, bookModels, noteMarker, markVariantsCss, MARK_VARIANTS, escapeXml, decodeEntities, stripTags, removeMarks, replaceHolyNames, removePunctuation, sanitizeInline, parseLine, injectAtVisibleOffsets, lineModel,
+    visibleOffsetAt, fontEmbeddingAllowed, fontMediaType, fontBytesFromCss, bookModels, noteMarker, markVariantsCss, MARK_VARIANTS, escapeXml, decodeEntities, stripTags, removeMarks, replaceHolyNames, removePunctuation, sanitizeInline, parseLine, injectAtVisibleOffsets, lineModel,
     MARK_RE, joinNames, uniqueBy, xhtmlDoc, rightsFacts, sourceList, completeMeta,
     hebNum, commentatorShortName, tocRange, normalizeSourceKey, rightsFor,
     buildEpub, zip, crc32, nativeDeflateRaw, uuidV4, safeFileName, formatDateHe,

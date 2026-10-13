@@ -138,6 +138,14 @@ function anchoredBook() {
   return { title: 'משנה ברורה', lines, toc, notes };
 }
 
+// הערה אישית עם עוגן גולמי (anchorEnd בשורה הגולמית, כולל תגים) — כמו במודל של אוצריא
+function withPersonal(b) {
+  const notes = { ...b.notes };
+  // שורה 2: "<b>(א)</b> וַיֹּ֣אמֶר..." — אופסט גולמי 10 = אחרי "<b>(א)</b>" (3 גלויים) ...
+  notes[2] = [{ commentator: 'הערה אישית', html: 'הערה &amp; שלי', personal: true, ref: 'הערה אישית', rawAt: 10 }];
+  return { ...b, notes };
+}
+
 function bookSpec(b, range, extra) {
   // extra.holy: שם הוי"ה ופיסוק בחלק מהשורות, לבדיקת ההסתרה והסרת הפיסוק
   if (extra && extra.holy) b = { ...b, lines: b.lines.map((l, i) => (i % 3 === 2 && !l.startsWith('<h') ? `${l}, אמר יְהוָה; נאמר?` : l)) };
@@ -221,6 +229,9 @@ function tinyPng() {
     build('docx-line', [bookSpec(ex, null, { holy: true })], { format: 'docx', notesMode: 'line', removePunctuation: true }, false),
     build('fb2', [bookSpec(gen, [1, 2], { holy: true }), bookSpec(anchoredBook())], { format: 'fb2', holyNames: 'heh' }, true),
     build('fb2-line', [bookSpec(ex, null, { continuous: true })], { format: 'fb2', notesMode: 'line' }, false),
+    build('personal-bookmarks', [bookSpec(withPersonal(gen), [1, 2], { bookmarks: [{ index: 3, label: 'להמשיך מכאן — בראשית א' }] })], { notesMode: 'popup' }, false),
+    build('docx-a5', [bookSpec(ex)], { format: 'docx', pageSize: 'a5', margins: 'narrow' }, false),
+    build('bookmark-continuous', [bookSpec(gen, [1, 2], { continuous: true, bookmarks: [{ index: 8, label: 'באמצע הפרק' }] })], {}, false),
   ]);
 
   test('mimetype is first and stored', () => {
@@ -325,6 +336,30 @@ function tinyPng() {
   });
   test('removePunctuation keeps acronyms and the final colon', () => {
     assert.strictEqual(C.removePunctuation('אמר רש"י, ובגמ\' (ע"ש. וכו\') כך - וכו:'), 'אמר רש"י ובגמ\' (ע"ש. וכו\') כך וכו:');
+  });
+  test('personal notes (raw anchor) and bookmarks nav', () => {
+    const f = builds[16].files;
+    const body = f.filter((x) => /b1-\d{4}\.xhtml$/.test(x.path)).map((x) => x.data).join('');
+    // rawAt 10 = אחרי "</b>" (3 תווים גלויים: "(א)") → הסמן לפני הרווח שאחרי התג
+    assert.ok(/<b>\(א\)<\/b><a class="noteref[^"]*" epub:type="noteref"[^>]*>א<\/a> /.test(body), 'raw anchor placed');
+    assert.ok(body.includes('<aside class="footnote personal"'));
+    const nav = f.find((x) => x.path.endsWith('nav.xhtml')).data;
+    const bm = f.find((x) => x.path.endsWith('bookmarks.xhtml')).data;
+    assert.ok(nav.includes('<a href="bookmarks.xhtml">הסימניות שלי</a>'));
+    assert.ok(/<a href="b1-\d{4}\.xhtml#b1l3">להמשיך מכאן — בראשית א<\/a>/.test(bm));
+    assert.ok(/id="b1l3"/.test(body));
+  });
+  test('bookmark inside a merged (continuous) paragraph', () => {
+    const bm = builds[18].files.find((x) => x.path.endsWith('bookmarks.xhtml')).data;
+    assert.ok(bm.includes('באמצע הפרק'));
+  });
+  test('docx page size and margins', () => {
+    const d = builds[17].files.find((x) => x.path === 'word/document.xml').data;
+    assert.ok(d.includes('<w:pgSz w:w="8391" w:h="11906"/>') && d.includes('w:top="720"'));
+  });
+  test('visibleOffsetAt', () => {
+    assert.strictEqual(C.visibleOffsetAt('<b>(א)</b> ב&amp;ג', 10), 3);
+    assert.strictEqual(C.visibleOffsetAt('<b>(א)</b> ב&amp;ג', 17), 6);
   });
   test('metadata has rights, source and personal-use note', () => {
     const opf = builds[2].files.find((x) => x.path.endsWith('content.opf')).data;

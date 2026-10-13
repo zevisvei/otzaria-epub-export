@@ -192,3 +192,8 @@ select.field { cursor: pointer; }
 .cm-fonts label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
 .cm-fonts label span { flex: 0 0 auto; min-width: 5rem; }
 .cm-fonts select { flex: 1; min-height: 34px; }
+
+.structure-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.7rem; }
+.structure-row span { font-size: 0.85rem; color: var(--color-on-surface-variant); }
+.structure-row select { max-width: 18rem; }
+.result.folder { background: var(--color-secondary-container); color: var(--color-on-secondary-container); }

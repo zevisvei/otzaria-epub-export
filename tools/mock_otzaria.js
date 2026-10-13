@@ -46,6 +46,19 @@
           'key-replace-holy-names': true, 'key-holy-name-style': 'kuf', 'key-show-teamim': false,
           'key-default-nikud': false, 'key-default-remove-punctuation': false, 'key-continuous-reading-mode': true,
         });
+        case 'notes.list':
+          return ok(byUid(p) && byUid(p).title === 'בראשית' ? [{ id: '1', lineNumber: 24, content: 'הערה **שלי**', contentPlain: 'הערה שלי על הפסוק' }] : []);
+        case 'bookmarks.list':
+          return ok([{ id: 'b1', type: 'text', title: 'בראשית', bookId: 'בראשית', bookUid: 'id:1', ref: 'בראשית, פרק ב', index: 30, label: 'להמשיך מכאן' }]);
+        case 'library.getTree': {
+          const tree = { title: 'ספרייה', path: '/', books: [], categories: [{ title: 'תורה', path: '/תנך/תורה', categories: [], books: [meta(books['בראשית']), meta(books['ספר החינוך'])] }] };
+          if (p.path) return ok(tree.categories[0]);
+          return ok(p.includeBooks === false ? { ...tree, categories: tree.categories.map((c) => ({ ...c, books: [] })) } : tree);
+        }
+        case 'library.listBookAltStructures':
+          return ok(p.bookId === 'בראשית' ? [{ key: 'Parasha', title: 'Parasha', heTitle: 'פרשה' }] : []);
+        case 'library.getBookAltToc':
+          return ok([{ text: 'פרשת בראשית', index: 1, level: 1 }, { text: 'פרשת נח', index: 64, level: 1 }, { text: 'פרשת לך לך', index: 127, level: 1 }]);
         case 'fonts.listInstalled': return ok({ platform: 'linux', families: [{ name: 'David', scripts: ['hebrew', 'latin'], monospace: false }] });
         case 'fonts.resolveFamilies':
           // בבדיקה: הבייטים של Noto Rashi תחת השם המבוקש

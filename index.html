@@ -21,9 +21,9 @@
       <div class="page">
         <!-- הוספת ספרים -->
         <section class="section">
-          <div class="section-head"><h2>הוספת ספר</h2></div>
+          <div class="section-head"><h2>הוספת ספרים</h2></div>
           <div class="search-row">
-            <input type="search" id="searchInput" class="field" placeholder="חיפוש ספר לפי שם…" autocomplete="off" aria-label="חיפוש ספר" />
+            <input type="search" id="searchInput" class="field" placeholder="חיפוש ספר או תיקייה לפי שם…" autocomplete="off" aria-label="חיפוש ספר" />
           </div>
           <div id="searchResults" class="results" aria-live="polite"></div>
         </section>
@@ -64,6 +64,32 @@
                 <label class="check"><input type="checkbox" id="optCover" checked /> כריכה מעוצבת</label>
                 <label class="check"><input type="checkbox" id="optTitlePage" checked /> דף שער</label>
                 <label class="check"><input type="checkbox" id="optRightsPage" checked /> דף פרטים וזכויות</label>
+                <label class="check"><input type="checkbox" id="optPersonalNotes" /> ההערות האישיות שלי</label>
+                <label class="check"><input type="checkbox" id="optBookmarks" /> הסימניות שלי (בתוכן העניינים)</label>
+                <label class="check"><input type="checkbox" id="optSplitBooks" /> קובץ נפרד לכל ספר (בארכיון ZIP)</label>
+              </div>
+            </fieldset>
+
+            <fieldset class="opt-set" id="docxOptions">
+              <legend>עמוד (Word)</legend>
+              <div class="opt-row">
+                <label class="opt-narrow">
+                  <span class="opt-label">גודל עמוד</span>
+                  <select id="optPageSize" class="field">
+                    <option value="a4">A4</option>
+                    <option value="a5">A5</option>
+                    <option value="letter">Letter</option>
+                    <option value="6x9">6×9 אינץ׳ (ספר)</option>
+                  </select>
+                </label>
+                <label class="opt-narrow">
+                  <span class="opt-label">שוליים</span>
+                  <select id="optMargins" class="field">
+                    <option value="normal">רגילים</option>
+                    <option value="narrow">צרים</option>
+                    <option value="wide">רחבים</option>
+                  </select>
+                </label>
               </div>
             </fieldset>
 

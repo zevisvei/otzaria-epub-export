@@ -284,9 +284,14 @@
       });
     });
 
+    // גודל עמוד ושוליים (twips: 1440 = אינץ')
+    const PAGE = { a4: [11906, 16838], a5: [8391, 11906], letter: [12240, 15840], '6x9': [8640, 12960] };
+    const MARGIN = { narrow: 720, normal: 1418, wide: 2160 };
+    const pg = PAGE[opts.pageSize] || PAGE.a4;
+    const mg = MARGIN[opts.margins] || MARGIN.normal;
     const sectPr = '<w:sectPr>'
       + '<w:footnotePr><w:numFmt w:val="hebrew1"/></w:footnotePr><w:endnotePr><w:numFmt w:val="hebrew1"/></w:endnotePr>'
-      + '<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1418" w:right="1418" w:bottom="1418" w:left="1418" w:header="709" w:footer="709" w:gutter="0"/>'
+      + `<w:pgSz w:w="${pg[0]}" w:h="${pg[1]}"/><w:pgMar w:top="${mg}" w:right="${mg}" w:bottom="${mg}" w:left="${mg}" w:header="709" w:footer="709" w:gutter="0"/>`
       + '<w:bidi/></w:sectPr>';
     const documentXml = `${XML_HEAD}<w:document xmlns:w="${W_NS}" xmlns:r="${R_NS}"><w:body>${body.join('')}${sectPr}</w:body></w:document>`;
 
