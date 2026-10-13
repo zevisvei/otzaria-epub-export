@@ -5,7 +5,7 @@
 
   const C = window.EpubCore;
   const HAS_OTZ = typeof window.Otzaria !== 'undefined';
-  const VERSION = '1.5.0'; // יש לעדכן יחד עם manifest.json
+  const VERSION = '1.5.1'; // יש לעדכן יחד עם manifest.json
   const CHUNK = 5000; // תקרת library.getBookContent
   const LINKS_WINDOW = 200; // תקרת library.getLinks
   const LINK_CONTENT_BATCH = 25; // תקרת library.getLinkContent
@@ -36,7 +36,9 @@
     const r = await call(method, params);
     if (!r || !r.success) {
       const msg = (r && r.error && (r.error.message || r.error.code)) || 'שגיאה לא ידועה';
-      throw new Error(`${method}: ${msg}`);
+      const err = new Error(`${method}: ${msg}`);
+      err.code = (r && r.error && r.error.code) || '';
+      throw err;
     }
     return r.data;
   }
@@ -171,23 +173,42 @@
   const normTitle = (t) => String(t || '').trim().replace(/\s+/g, ' ');
 
   /**
-   * אילו מהכותרות חסומות לייצוא. מאוצריא 0.9.99 — library.getExportRestrictions
-   * (הרשימה העדכנית של התוכנה); בגרסאות קודמות — העתק הרשימה שבתוסף (js/export-restricted.js).
+   * אילו מהכותרות חסומות לייצוא לפורמט קל לעריכה.
+   * מאוצריא 0.9.99 — library.getBookProtections (הגבלת המו"ל מהמסד, Otzaria/otzaria#2507);
+   * בגרסאות קודמות — העתק רשימת התוכנה שבתוסף (js/export-restricted.js).
+   * entries: כותרות, או { title, bookUid?, categoryId? }.
    */
-  async function restrictedAmong(titles) {
-    const list = [...new Set(titles.map(normTitle).filter(Boolean))];
-    if (!list.length) return new Set();
-    const r = await call('library.getExportRestrictions', { titles: list });
-    if (r.success && r.data && Array.isArray(r.data.restricted)) return new Set(r.data.restricted.map(normTitle));
+  async function restrictedAmong(entries) {
+    const items = [];
+    const seen = new Set();
+    for (const e of entries) {
+      const it = typeof e === 'string' ? { title: e } : e;
+      const key = it.bookUid || `${normTitle(it.title)}|${it.categoryId ?? ''}`;
+      if (!normTitle(it.title) || seen.has(key)) continue;
+      seen.add(key);
+      items.push(it);
+    }
+    if (!items.length) return new Set();
+    const out = new Set();
+    let viaApi = true;
+    for (let i = 0; i < items.length && viaApi; i += 500) {
+      const batch = items.slice(i, i + 500);
+      const r = await call('library.getBookProtections', {
+        items: batch.map((it) => (it.bookUid ? { bookUid: it.bookUid } : { title: it.title, categoryId: it.categoryId })),
+      });
+      if (!(r.success && Array.isArray(r.data))) { viaApi = false; break; }
+      r.data.forEach((p, k) => { if (p && p.editableExport === false) out.add(normTitle(batch[k].title)); });
+    }
+    if (viaApi) return out;
     const fallback = new Set((window.EPUB_EXPORT_RESTRICTED || []).map(normTitle));
-    return new Set(list.filter((t) => fallback.has(t)));
+    return new Set(items.map((it) => normTitle(it.title)).filter((t) => fallback.has(t)));
   }
   const RESTRICTED_MSG = 'הספר חסום לייצוא לפורמט קל לעריכה (כמו "ייצוא הספר המלא" באוצריא). אפשר להדפיס אותו מאוצריא.';
 
   async function addBook(meta, opts) {
     const key = meta.bookUid || `${meta.bookId}#${meta.id ?? ''}`;
     if (state.books.some((b) => b.key === key)) { if (!opts || !opts.quiet) notifyError('הספר כבר נמצא ברשימה'); return null; }
-    if ((await restrictedAmong([meta.title || meta.bookId])).size) {
+    if ((await restrictedAmong([{ title: meta.title || meta.bookId, bookUid: meta.bookUid }])).size) {
       if (!opts || !opts.quiet) notifyError(`${meta.title || meta.bookId}: ${RESTRICTED_MSG}`);
       return null;
     }
@@ -677,6 +698,7 @@
     }
     const targets = [...uniq.values()];
     const content = new Map();
+    const forbidden = new Set();
     for (let i = 0; i < targets.length; i += LINK_CONTENT_BATCH) {
       checkCancel();
       progress(`${label}: טוען את דברי המפרשים…`, i / Math.max(1, targets.length));
@@ -689,10 +711,18 @@
       });
       (r.items || []).forEach((it, j) => {
         const l = batch[j];
+        // מפרש שהמו"ל הגביל (#2173): הטקסט אינו נמסר — אין לייצא קובץ חסר
+        if (it && it.error === 'forbidden') forbidden.add(l.targetTitle);
         if (it && typeof it.content === 'string' && it.content.trim()) {
           content.set(`${l.targetTitle}|${l.targetLine}|${l.targetLineEnd ?? ''}|${l.targetIsUserBook ? 1 : 0}`, it.content);
         }
       });
+    }
+    if (forbidden.size) {
+      const err = new Error(`${[...forbidden].map((t) => C.commentatorShortName(t, b.title)).join(', ')}: ${RESTRICTED_MSG}`);
+      err.code = 'error.forbidden';
+      err.restricted = true;
+      throw err;
     }
     // קיבוץ לפי שורה. קישור עם עוגן-מילה (למשל שער הציון על המשנה ברורה) הוא הערה
     // נפרדת במקומה בשורה; קישורים בלי עוגן מאוחדים להערה אחת לכל מפרש בסוף השורה.
@@ -868,7 +898,7 @@
     const opts = readOptions();
     state.cancelled = false;
     // בדיקה אחרונה: הספרים וכל המפרשים שנבחרו (כמו blocksEditableExport באוצריא)
-    const blocked = await restrictedAmong(state.books.flatMap((b) => [b.title, ...b.commentators.map((c) => c.title)]));
+    const blocked = await restrictedAmong(state.books.flatMap((b) => [{ title: b.title, bookUid: b.bookUid }, ...b.commentators.map((c) => c.title)]));
     if (blocked.size) {
       notifyError(`הייצוא נחסם — ${[...blocked].join(', ')}: ${RESTRICTED_MSG}`);
       return;
@@ -931,6 +961,8 @@
       }
     } catch (e) {
       if (e && e.message === 'cancelled') notify('הייצוא בוטל');
+      else if (e && e.restricted) notifyError(`הייצוא נחסם — ${e.message}`);
+      else if (e && /forbidden/.test(e.code || '')) notifyError(`הייצוא נחסם — ${RESTRICTED_MSG}`);
       else notifyError(`הייצוא נכשל: ${(e && e.message) || e}`);
     } finally {
       $('#busy').hidden = true;

@@ -1,5 +1,5 @@
 // נוצר ע"י tools/build_restricted.py — העתק של assets/export_restricted_books.json באוצריא
-// (Otzaria/otzaria@ca2c8fe97761). גיבוי לגרסאות בלי library.getExportRestrictions (לפני 0.9.99).
+// (Otzaria/otzaria@ca2c8fe97761). גיבוי לגרסאות בלי library.getBookProtections (לפני 0.9.99).
 window.EPUB_EXPORT_RESTRICTED = [
   "שמירת שבת כהלכתה - א",
   "הערות על שמירת שבת כהלכתה - א",

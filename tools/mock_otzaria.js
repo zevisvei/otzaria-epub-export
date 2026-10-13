@@ -63,6 +63,12 @@
           if (p.path === '/תנ"ך') return ok(strip(tanach));
           return ok(strip({ title: 'ספרייה', path: '/', books: [], categories: [tanach] }));
         }
+        case 'library.getBookProtections':
+          if (!window.__protections) return { success: false, error: { code: 'error.unknown_method', message: 'unknown' } };
+          return ok(p.items.map((it) => {
+            const lvl = window.__protections[it.title || (Object.values(books).find((b) => `id:${b.id}` === it.bookUid) || {}).title] || 0;
+            return { level: lvl, textAvailable: lvl === 0, editableExport: lvl === 0, pdfExport: lvl < 2, copyLimit: lvl ? 40 : null, printLimit: lvl > 1 ? 40 : null };
+          }));
         case 'library.listBookAltStructures':
           return ok(p.bookId === 'בראשית' ? [{ key: 'Parasha', title: 'Parasha', heTitle: 'פרשה' }] : []);
         case 'library.getBookAltToc':
@@ -104,7 +110,7 @@
           return ok({ truncated: false, links });
         }
         case 'library.getLinkContent':
-          return ok({ items: p.links.map((l) => ({ content: `<b>דיבור המתחיל.</b> פירוש ${l.targetTitle.split(' על ')[0]} לשורה ${l.targetLine / 2} &amp; עוד` })) });
+          return ok({ items: p.links.map((l) => (window.__forbiddenCm === l.targetTitle ? { error: 'forbidden' } : { content: `<b>דיבור המתחיל.</b> פירוש ${l.targetTitle.split(' על ')[0]} לשורה ${l.targetLine / 2} &amp; עוד` })) });
         case 'fs.beginBinaryWrite': {
           const tok = `w${Object.keys(uploads).length + 1}`;
           return ok({ writeToken: tok, uploadUrl: `mock-upload://${tok}`, maxBytes: 100 << 20 });
@@ -113,6 +119,7 @@
           window.__saved = uploads[`mock-upload://${p.writeToken}`];
           window.__savedName = `${p.suggestedName}.${p.extension}`;
           return ok({ cancelled: false, token: 't', name: window.__savedName, size: window.__saved.length });
+        case 'ui.showError': (window.__errors = window.__errors || []).push(p.message); return ok(true);
         default: return ok(true);
       }
     },
