@@ -71,6 +71,11 @@ section.chapter-notes {
 }
 h2.notes-title { font-size: 1.15em; margin: 0.4em 0 0.6em; }
 
+/* חלונית בלבד: קוראים עם חלוניות מסתירים את ה-aside; בשאר — מוצג בקטן בסוף הפרק */
+div.footnotes { margin-top: 2em; padding-top: 0.5em; border-top: 1px solid #999; font-size: 0.82em; line-height: 1.45; }
+aside.footnote p { margin: 0 0 0.4em; }
+.note-mark { font-weight: bold; }
+
 /* הערות סיום (נפתחות כחלונית) */
 section.endnotes { font-size: 0.9em; line-height: 1.5; }
 section.endnotes ol { list-style: none; margin: 0; padding: 0; }

@@ -202,6 +202,8 @@ function tinyPng() {
     build('anchored-endnotes', [bookSpec(anchoredBook())], { notesMode: 'endnotes' }, false),
     build('anchored-line', [bookSpec(anchoredBook())], { notesMode: 'line' }, false),
     build('anchored-chapter', [bookSpec(anchoredBook())], { notesMode: 'chapter' }, false),
+    build('popup', [bookSpec(ex)], {}, true),
+    build('anchored-popup', [bookSpec(anchoredBook())], { notesMode: 'popup' }, false),
   ]);
 
   test('mimetype is first and stored', () => {
@@ -254,6 +256,15 @@ function tinyPng() {
     assert.ok(line.includes('<p class="cm"><span class="anchor-mark">(א)</span> <b class="cm-who">שער הציון</b> מקור 1</p>'));
     const chap = body(builds[7]);
     assert.ok(/כא<a class="noteref" id="b1r1" href="#b1n1">\(א\)<\/a>רי/.test(chap));
+  });
+  test('popup mode (default): aside footnotes in the same file, no notes files', () => {
+    const f = builds[8].files;
+    const body = f.filter((x) => /b1-\d{4}\.xhtml$/.test(x.path)).map((x) => x.data).join('');
+    assert.ok(!f.some((x) => /-notes\.xhtml$/.test(x.path)), 'no separate notes files');
+    assert.ok(/<a class="noteref" epub:type="noteref" role="doc-noteref" id="b1r1" href="#b1n1">א<\/a>/.test(body));
+    assert.ok(body.includes('<aside class="footnote" epub:type="footnote" role="doc-footnote" id="b1n1">'));
+    const anch = builds[9].files.filter((x) => /b1-\d{4}\.xhtml$/.test(x.path)).map((x) => x.data).join('');
+    assert.ok(/כא<a class="noteref" epub:type="noteref"[^>]*href="#b1n1">\(א\)<\/a>רי/.test(anch));
   });
   test('metadata has rights, source and personal-use note', () => {
     const opf = builds[2].files.find((x) => x.path.endsWith('content.opf')).data;

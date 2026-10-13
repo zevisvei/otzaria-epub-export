@@ -16,14 +16,18 @@ jobs:
 
       # מאמת ובונה תמיד; מפרסם לחנות כשהסודות מוגדרים והגרסה ב-manifest.json עלתה.
       # דחיפה ראשונה (תוסף חדש) ממתינה לאישור מנהל.
+      # זמנית: הענף של Otzaria/otzaria-plugin-validator#8, ששולח את תמונת התוסף לחנות.
+      # אחרי המיזוג — לחזור ל-Otzaria/otzaria-plugin-validator@v1.
       - id: otzaria
-        uses: Otzaria/otzaria-plugin-validator@v1
+        uses: zevisvei/otzaria-plugin-validator@feat/store-image
         with:
           fail-on-warnings: 'true'
           build: 'true'
           otzaria-user: ${{ secrets.OTZARIA_USER }}
           otzaria-password: ${{ secrets.OTZARIA_PASSWORD }}
           reports-consent: 'true'
+          image: tools/store-icon.png
+          update-image: 'true'
           screenshots: |
             screenshots/main.png
 

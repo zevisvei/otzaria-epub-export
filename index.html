@@ -54,8 +54,10 @@
             </div>
             <fieldset class="opt-set">
               <legend>הצגת המפרשים</legend>
-              <label class="radio"><input type="radio" name="notesMode" value="endnotes" checked />
-                <span><b>הערות נפתחות</b> <span class="muted small">— סימן קטן בטקסט; לחיצה פותחת את הפירוש בחלונית. הטקסט עצמו נשמר בסוף הספר ולא מפריע לקריאה.</span></span></label>
+              <label class="radio"><input type="radio" name="notesMode" value="popup" checked />
+                <span><b>חלונית בלבד</b> <span class="muted small">— סימן קטן בטקסט, והפירוש מופיע רק בלחיצה עליו (Apple Books, Kobo, Google Play Books, KOReader). בקורא שאינו תומך בחלוניות ההערות יופיעו בקטן בסוף הפרק.</span></span></label>
+              <label class="radio"><input type="radio" name="notesMode" value="endnotes" />
+                <span><b>הערות בסוף הספר</b> <span class="muted small">— לחיצה פותחת חלונית; הטקסט שמור בקובצי הערות נפרדים בסוף הספר ואינו מופיע באף פרק, בכל קורא.</span></span></label>
               <label class="radio"><input type="radio" name="notesMode" value="line" />
                 <span><b>מתחת לכל קטע</b> <span class="muted small">— הפירוש מופיע מיד אחרי הפסוק/הקטע, בגופן נפרד.</span></span></label>
               <label class="radio"><input type="radio" name="notesMode" value="chapter" />

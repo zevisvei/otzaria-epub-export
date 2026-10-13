@@ -408,7 +408,7 @@
     const topCount = levels.filter((l) => l === minLevel).length;
     const splitLevel = topCount <= 1 ? minLevel + 1 : minLevel;
     const headingShift = multi ? 1 : 0;
-    const notesMode = opts.notesMode || 'endnotes';
+    const notesMode = opts.notesMode || 'popup';
     const fontClass = opts.notesFont === 'book' ? 'cm-book' : 'cm-rashi';
 
     let cur = null;
@@ -473,7 +473,12 @@
         const nid = `${prefix}n${noteSeq}`;
         const rid = `${prefix}r${noteSeq}`;
         const marker = escapeXml(label || hebNum(cur.noteCount));
-        if (notesMode === 'chapter') {
+        if (notesMode === 'popup') {
+          // חלונית בלבד (EPUB 3 footnote): ההערה ב-<aside> באותו קובץ. קוראים שתומכים בחלוניות
+          // (Apple Books, Kobo, Google Play Books, KOReader) מסתירים אותה ומציגים רק בלחיצה על הסמן
+          refs.push(`<a class="noteref" epub:type="noteref" role="doc-noteref" id="${rid}" href="#${nid}">${marker}</a>`);
+          cur.notes.push(`<aside class="footnote" epub:type="footnote" role="doc-footnote" id="${nid}"><p><span class="note-mark">${marker}</span> ${who} ${n.text}</p></aside>`);
+        } else if (notesMode === 'chapter') {
           // הערות גלויות בסוף הפרק: קישורים רגילים, בלי epub:type, כדי שאף קורא לא יסתיר אותן
           refs.push(`<a class="noteref" id="${rid}" href="#${nid}">${marker}</a>`);
           cur.notes.push(`<p class="cm" id="${nid}"><a class="noteback" href="#${rid}">${marker}</a> ${who} ${n.text}</p>`);
@@ -507,6 +512,9 @@
     const noteDocs = [];
     for (const f of used) {
       let body = `<section epub:type="chapter">\n${f.body.join('\n')}\n</section>`;
+      if (f.notes.length && notesMode === 'popup') {
+        body += `\n<div class="footnotes ${fontClass}">\n${f.notes.join('\n')}\n</div>`;
+      }
       if (f.notes.length && notesMode === 'chapter') {
         body += `\n<section class="chapter-notes ${fontClass}">\n<h2 class="notes-title">הערות</h2>\n${f.notes.join('\n')}\n</section>`;
       }

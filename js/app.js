@@ -5,7 +5,7 @@
 
   const C = window.EpubCore;
   const HAS_OTZ = typeof window.Otzaria !== 'undefined';
-  const VERSION = '1.0.1'; // יש לעדכן יחד עם manifest.json
+  const VERSION = '1.1.0'; // יש לעדכן יחד עם manifest.json
   const CHUNK = 5000; // תקרת library.getBookContent
   const LINKS_WINDOW = 200; // תקרת library.getLinks
   const LINK_CONTENT_BATCH = 25; // תקרת library.getLinkContent
@@ -281,7 +281,7 @@
       rightsPage: $('#optRightsPage').checked,
       removeTeamim: $('#optRemoveTeamim').checked,
       removeNikud: $('#optRemoveNikud').checked,
-      notesMode: (document.querySelector('input[name="notesMode"]:checked') || {}).value || 'endnotes',
+      notesMode: (document.querySelector('input[name="notesMode"]:checked') || {}).value || 'popup',
       notesFont: $('#optNotesFont').value,
     };
   }
