@@ -41,3 +41,9 @@ tools/make_icon.sh                                   # רינדור tools/icon.s
 ```
 
 לתצוגה בדפדפן עם גשר מדומה: `python3 -m http.server`, ואז לפתוח את `tools/harness.html`.
+
+## פרסום
+
+`.github/workflows/release.yml` מאמת, בונה ומפרסם לחנות אוצריא בכל push ל-`main` שמעלה את `version` ב-`manifest.json`
+(ראו [פרסום אוטומטי ל-CI](https://github.com/Otzaria/otzaria/blob/dev/docs/plugin-sdk/README.md#פרסום-אוטומטי-ל-ci-github-action)).
+נדרשים Secrets בריפו: `OTZARIA_USER`, `OTZARIA_PASSWORD`. בלעדיהם ה-Action מאמת בלבד.

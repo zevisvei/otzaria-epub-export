@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -23,17 +27,13 @@ jobs:
           unzip -q epubcheck.zip -d "$RUNNER_TEMP"
           tools/check_samples.sh "$RUNNER_TEMP/epubcheck-5.4.0/epubcheck.jar"
 
-  plugin:
+  validate:
     runs-on: ubuntu-latest
-    needs: test
     steps:
       - uses: actions/checkout@v4
+      # בלי סודות: אימות בלבד (כמו החנות), עם תגובת סיכום על ה-PR
       - uses: Otzaria/otzaria-plugin-validator@v1
         with:
           fail-on-warnings: 'true'
-          build: 'true'
-          otzaria-user: ${{ secrets.OTZARIA_USER }}
-          otzaria-password: ${{ secrets.OTZARIA_PASSWORD }}
-          reports-consent: 'true'
-          screenshots: |
-            screenshots/main.png
+          pr-comment: ${{ github.event_name == 'pull_request' }}
+          github-token: ${{ github.token }}

@@ -1,0 +1,20 @@
+name: Publish plugin
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # מפרסם לחנות רק כשהגרסה ב-manifest.json עלתה; דחיפה ראשונה ממתינה לאישור מנהל
+      - uses: Otzaria/otzaria-plugin-validator@v1
+        with:
+          fail-on-warnings: 'true'
+          otzaria-user: ${{ secrets.OTZARIA_USER }}
+          otzaria-password: ${{ secrets.OTZARIA_PASSWORD }}
+          reports-consent: 'true'
+          screenshots: |
+            screenshots/main.png
