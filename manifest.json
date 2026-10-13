@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "com.community.epub-export",
   "name": "ייצוא EPUB",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "sdkVersion": "1.x",
   "description": "ייצוא ספרים מאוצריא ל-EPUB, Kobo, Word ו-FB2 מימין לשמאל: טווח, כמה ספרים בקובץ, מפרשים כהערות, גופנים, דף שער ופרטי זכויות.",
   "author": "zevisvei",

@@ -306,6 +306,33 @@
     return { start: Math.max(0, start), end: Math.max(start, Math.min(end, lineCount)) };
   }
 
+  /**
+   * מיזוג שני מבני תוכן עניינים (למשל פרשות + פרקים) לעץ אחד לפי מיקום בספר:
+   * המבנה החלופי מעל, והרגיל מתחתיו — פרק נכנס תחת הפרשה שבה הוא מתחיל.
+   * כותרת-שורש יחידה של המבנה הרגיל (שם הספר) נשארת מעל הכול.
+   */
+  function mergeTocs(main, alt) {
+    if (!alt || !alt.length) return main.slice();
+    if (!main || !main.length) return alt.slice();
+    const minM = Math.min(...main.map((e) => e.level));
+    const minA = Math.min(...alt.map((e) => e.level));
+    const tops = main.filter((e) => e.level === minM);
+    const singleTop = tops.length === 1 && tops[0].index <= Math.min(...alt.map((e) => e.index));
+    const altBase = singleTop ? 2 : 1;
+    const altDepth = Math.max(...alt.map((e) => e.level)) - minA + 1;
+    const mainBase = altBase + altDepth;
+    const out = [];
+    if (singleTop) out.push({ ...tops[0], level: 1, kind: 'main' });
+    for (const e of alt) out.push({ ...e, level: altBase + (e.level - minA), kind: 'alt' });
+    for (const e of main) {
+      if (singleTop && e === tops[0]) continue;
+      out.push({ ...e, level: mainBase + (e.level - (singleTop ? minM + 1 : minM)), kind: 'main' });
+    }
+    // לפי מיקום; באותה שורה — הרמה הגבוהה (פרשה) לפני הנמוכה (פרק)
+    out.sort((x, y) => x.index - y.index || x.level - y.level);
+    return out.map(({ kind, ...e }) => e);
+  }
+
   // ══════════════════════════════════════════════════════════════════════
   // זכויות יוצרים לפי מקור הטקסט
   // ══════════════════════════════════════════════════════════════════════
@@ -633,7 +660,7 @@
    * book: { title, lines[], start (אינדקס השורה הראשונה בספר המקורי), toc[] (בטווח; index מוחלט),
    *         notes: { [lineIndex]: [{ commentator, html }] } }
    */
-  function renderBook(book, bIdx, opts, multi) {
+  function renderBook(book, bIdx, opts, multi, depth) {
     const files = [];
     const navRoots = [];
     const bookmarkNav = [];
@@ -648,7 +675,8 @@
     // מתחילים קובץ חדש בכותרות העליונות (ובאחת מתחתיהן אם העליונה היא רק שם הספר)
     const topCount = levels.filter((l) => l === minLevel).length;
     const splitLevel = topCount <= 1 ? minLevel + 1 : minLevel;
-    const headingShift = multi ? 1 : 0;
+    // כותרות הספר מתחת לכותרת הספר ולכותרות התיקיות שמעליו
+    const headingShift = multi ? 1 + (depth || 0) : 0;
     const notesMode = opts.notesMode || 'popup';
     const fontClass = opts.notesFont === 'book' ? 'cm-book' : 'cm-rashi';
 
@@ -772,10 +800,19 @@
     return { docs, noteDocs, navRoots, bookmarkNav, noteCount: noteSeq };
   }
 
-  function partPage(book, bIdx) {
+  /** דף שער לתיקייה: כותרת התיקייה ונתיב התיקיות שמעליה. path — שמות מהשורש ועד התיקייה. */
+  function folderPage(path, n) {
+    const lvl = Math.min(6, path.length);
+    const crumbs = path.length > 1 ? `<p class="part-range">${escapeXml(path.slice(0, -1).join(' › '))}</p>` : '';
+    const body = `<section class="part folder" epub:type="part">${crumbs}<h${lvl} class="part-title">${escapeXml(path[path.length - 1])}</h${lvl}></section>`;
+    return { name: `f${String(n).padStart(3, '0')}.xhtml`, content: xhtmlDoc(path[path.length - 1], body, { bodyClass: 'part-body', bodyType: 'bodymatter' }) };
+  }
+
+  function partPage(book, bIdx, depth) {
     const name = `b${bIdx + 1}-0000.xhtml`;
+    const lvl = Math.min(6, 1 + (depth || 0));
     const body = '<section class="part" epub:type="part">'
-      + `<h1 class="part-title">${escapeXml(book.title)}</h1>`
+      + `<h${lvl} class="part-title">${escapeXml(book.title)}</h${lvl}>`
       + (book.rangeLabel ? `<p class="part-range">${escapeXml(book.rangeLabel)}</p>` : '')
       + (book.details && book.details.authors && book.details.authors.length ? `<p class="part-author">${escapeXml(joinNames(book.details.authors))}</p>` : '')
       + '</section>';
@@ -801,12 +838,17 @@
 
   function ncxDoc(spec, navTree) {
     let order = 0;
+    let seq = 0;
     let maxDepth = 1;
+    // נקודות עם אותו יעד (למשל פרשה ופרק שמתחילים באותה שורה בתוכן עניינים משולב)
+    // חייבות לחלוק playOrder (NCX / epubcheck RSC-005)
+    const orderOf = new Map();
     const points = (nodes, depth) => nodes.map((n) => {
-      order++;
+      if (!orderOf.has(n.href)) orderOf.set(n.href, ++order);
+      seq++;
       maxDepth = Math.max(maxDepth, depth);
-      const id = `np${order}`;
-      return `<navPoint id="${id}" playOrder="${order}"><navLabel><text>${escapeXml(n.label)}</text></navLabel><content src="text/${escapeXml(n.href)}"/>${points(n.children, depth + 1)}</navPoint>`;
+      const id = `np${seq}`;
+      return `<navPoint id="${id}" playOrder="${orderOf.get(n.href)}"><navLabel><text>${escapeXml(n.label)}</text></navLabel><content src="text/${escapeXml(n.href)}"/>${points(n.children, depth + 1)}</navPoint>`;
     }).join('\n');
     const map = points(navTree, 1);
     return '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -922,21 +964,42 @@
     let firstBody = null;
     const allNoteDocs = [];
     const allBookmarks = [];
+    // תיקיות (book.groupPath — שמות התיקיות מהתיקייה שנבחרה ועד הספר): דף שער ונקודת ניווט לכל
+    // תיקייה, בסדר הקריאה, והספרים מקוננים תחתיהן; תוכן העניינים של הספר — מתחת לספר.
+    let openPath = [];
+    const folderNodes = [];
+    let folderSeq = 0;
     spec.books.forEach((book, bIdx) => {
       let bookNode = null;
+      const gp = multi ? book.groupPath || [] : [];
+      let k = 0;
+      while (k < openPath.length && k < gp.length && openPath[k] === gp[k]) k++;
+      openPath = openPath.slice(0, k);
+      folderNodes.length = k;
+      for (let d = k; d < gp.length; d++) {
+        folderSeq++;
+        const fp = folderPage(gp.slice(0, d + 1), folderSeq);
+        addXhtml(fp.name, fp.content);
+        if (!firstBody) firstBody = fp.name;
+        const node = { label: gp[d], href: fp.name, children: [] };
+        (d === 0 ? navTree : folderNodes[d - 1].children).push(node);
+        folderNodes.push(node);
+        openPath.push(gp[d]);
+      }
+      const parentList = folderNodes.length ? folderNodes[folderNodes.length - 1].children : navTree;
       if (multi) {
-        const p = partPage(book, bIdx);
+        const p = partPage(book, bIdx, gp.length);
         addXhtml(p.name, p.content);
         bookNode = { label: book.title, href: p.name, children: [] };
-        navTree.push(bookNode);
+        parentList.push(bookNode);
         if (!firstBody) firstBody = p.name;
       }
-      const r = renderBook(book, bIdx, opts, multi);
+      const r = renderBook(book, bIdx, opts, multi, gp.length);
       for (const d of r.docs) addXhtml(d.name, d.content);
       if (!firstBody && r.docs.length) firstBody = r.docs[0].name;
       if (bookNode) bookNode.children.push(...r.navRoots);
-      else if (r.navRoots.length) navTree.push(...r.navRoots);
-      else if (r.docs.length) navTree.push({ label: book.title, href: r.docs[0].name, children: [] });
+      else if (r.navRoots.length) parentList.push(...r.navRoots);
+      else if (r.docs.length) parentList.push({ label: book.title, href: r.docs[0].name, children: [] });
       if (r.noteDocs.length) allNoteDocs.push({ book, docs: r.noteDocs });
       if (r.bookmarkNav.length) allBookmarks.push({ book, nodes: r.bookmarkNav });
     });
@@ -1144,11 +1207,12 @@
 
   /** שם קובץ בטוח לכל מערכות הקבצים. */
   function safeFileName(s) {
-    return String(s || 'ספר').replace(/[\\/:*?"<>|\u0000-\u001F]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'ספר';
+    // גרשיים בראשי תיבות (תנ"ך) ← ״, שמותר בשמות קבצים בכל מערכות ההפעלה
+    return String(s || 'ספר').replace(/(?<=[א-ת])"(?=[א-ת])/g, '\u05F4').replace(/[\\/:*?"<>|\u0000-\u001F]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'ספר';
   }
 
   const api = {
-    visibleOffsetAt, fontEmbeddingAllowed, fontMediaType, fontBytesFromCss, bookModels, noteMarker, markVariantsCss, MARK_VARIANTS, escapeXml, decodeEntities, stripTags, removeMarks, replaceHolyNames, removePunctuation, sanitizeInline, parseLine, injectAtVisibleOffsets, lineModel,
+    mergeTocs, visibleOffsetAt, fontEmbeddingAllowed, fontMediaType, fontBytesFromCss, bookModels, noteMarker, markVariantsCss, MARK_VARIANTS, escapeXml, decodeEntities, stripTags, removeMarks, replaceHolyNames, removePunctuation, sanitizeInline, parseLine, injectAtVisibleOffsets, lineModel,
     MARK_RE, joinNames, uniqueBy, xhtmlDoc, rightsFacts, sourceList, completeMeta,
     hebNum, commentatorShortName, tocRange, normalizeSourceKey, rightsFor,
     buildEpub, zip, crc32, nativeDeflateRaw, uuidV4, safeFileName, formatDateHe,

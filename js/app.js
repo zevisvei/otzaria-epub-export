@@ -5,7 +5,7 @@
 
   const C = window.EpubCore;
   const HAS_OTZ = typeof window.Otzaria !== 'undefined';
-  const VERSION = '1.3.0'; // יש לעדכן יחד עם manifest.json
+  const VERSION = '1.4.0'; // יש לעדכן יחד עם manifest.json
   const CHUNK = 5000; // תקרת library.getBookContent
   const LINKS_WINDOW = 200; // תקרת library.getLinks
   const LINK_CONTENT_BATCH = 25; // תקרת library.getLinkContent
@@ -117,12 +117,14 @@
 
   async function addFolder(folder) {
     const r = await call('library.getTree', { path: folder.path, includeBooks: true, types: ['text'] });
+    // מעבר לעומק: כל ספר נושא את נתיב התיקיות שלו מתחת לתיקייה שנבחרה — לתוכן עניינים
+    // לפי תיקיות ← ספרים ← תוכן העניינים של הספר
     const books = [];
-    const walk = (node) => {
-      for (const b of (node && node.books) || []) if (!b.type || b.type === 'text') books.push(b);
-      for (const c of (node && node.categories) || []) walk(c);
+    const walk = (node, path) => {
+      for (const b of (node && node.books) || []) if (!b.type || b.type === 'text') books.push({ ...b, groupPath: path });
+      for (const c of (node && node.categories) || []) walk(c, [...path, c.title]);
     };
-    if (r.success && r.data) walk(r.data);
+    if (r.success && r.data) walk(r.data, []);
     if (!books.length) { notifyError('אין בתיקייה ספרי טקסט'); return; }
     if (books.length > 40 && !(await confirmDlg('תיקייה גדולה', `בתיקייה „${folder.title}” יש ${books.length} ספרים. הייצוא עלול להימשך זמן רב ולהפיק קובץ גדול. להמשיך?`))) return;
     state.cancelled = false;
@@ -133,7 +135,8 @@
         const b = books[i];
         const key = b.bookUid || `${b.bookId}#${b.id ?? ''}`;
         if (state.books.some((x) => x.key === key)) continue;
-        await addBook({ ...b, title: b.title || b.bookId }, { quiet: true });
+        const added = await addBook({ ...b, title: b.title || b.bookId }, { quiet: true });
+        if (added) added.groupPath = b.groupPath;
       }
     } catch (e) {
       if (!(e && e.message === 'cancelled')) notifyError(`הוספת התיקייה נכשלה: ${(e && e.message) || e}`);
@@ -190,11 +193,15 @@
     b.structure = key;
     b.from = null;
     b.to = null;
+    const merge = key.startsWith('merge:');
+    const altKey = merge ? key.slice(6) : key;
     if (!key) {
       b.toc = b.mainToc;
     } else {
-      const r = await call('library.getBookAltToc', { bookId: b.bookId, structureKey: key });
-      b.toc = r.success && Array.isArray(r.data) ? r.data : b.mainToc;
+      const r = await call('library.getBookAltToc', { bookId: b.bookId, structureKey: altKey });
+      const alt = r.success && Array.isArray(r.data) ? r.data : [];
+      // מיזוג: החלופי מעל והרגיל מתחתיו (למשל פרשה ← פרקים), לפי מיקום בספר
+      b.toc = !alt.length ? b.mainToc : merge ? C.mergeTocs(b.mainToc, alt) : alt;
     }
     renderBooks();
     saveDraft();
@@ -279,9 +286,12 @@
     const sel = el('select', { class: 'field' });
     sel.append(el('option', { value: '' }, 'תוכן העניינים הרגיל'));
     for (const a of b.altStructures) {
-      const o = el('option', { value: a.key }, a.heTitle || a.title || a.key);
-      if (a.key === b.structure) o.selected = true;
-      sel.append(o);
+      const name = a.heTitle || a.title || a.key;
+      for (const [value, label] of [[a.key, name], [`merge:${a.key}`, `${name} + תוכן העניינים הרגיל (משולב)`]]) {
+        const o = el('option', { value }, label);
+        if (value === b.structure) o.selected = true;
+        sel.append(o);
+      }
     }
     sel.addEventListener('change', () => setStructure(b, sel.value));
     return el('label', { class: 'structure-row' }, el('span', { text: 'חלוקה:' }), sel);
@@ -535,7 +545,7 @@
     clearTimeout(draftTimer);
     draftTimer = setTimeout(() => {
       const books = state.books.map((b) => ({
-        bookId: b.bookId, bookUid: b.bookUid, id: b.id, title: b.title, structure: b.structure,
+        bookId: b.bookId, bookUid: b.bookUid, id: b.id, title: b.title, structure: b.structure, groupPath: b.groupPath || [],
         from: b.from, to: b.to, commentators: b.commentators.map((c) => c.title),
         // נשמרות גם הכותרות, כדי לזהות שתוכן העניינים השתנה בעדכון ספרייה
         fromText: b.from != null && b.toc[b.from] ? b.toc[b.from].text : null,
@@ -555,7 +565,8 @@
       await addBook({ bookId: s.bookId, bookUid: s.bookUid, id: s.id, title: s.title });
       const b = state.books[state.books.length - 1];
       if (!b) continue;
-      if (s.structure && b.altStructures.some((a) => a.key === s.structure)) await setStructure(b, s.structure);
+      b.groupPath = Array.isArray(s.groupPath) ? s.groupPath : [];
+      if (s.structure && b.altStructures.some((a) => s.structure === a.key || s.structure === `merge:${a.key}`)) await setStructure(b, s.structure);
       const pick = (i, text) => (i != null && b.toc[i] && (text == null || b.toc[i].text === text) ? i : null);
       b.from = pick(s.from, s.fromText);
       b.to = pick(s.to, s.toText);
@@ -849,6 +860,7 @@
           notes,
           commentators: b.commentators.length ? await commentatorRights(b) : [],
           bookmarks,
+          groupPath: b.groupPath || [],
           // "פסוקים ברצף" רק בתנ"ך ובתלמוד, כמו מצב הקריאה הרציף באוצריא
           continuous: !!opts.continuous && isContinuousCategory(b.details),
         });

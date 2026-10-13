@@ -225,10 +225,19 @@
       + '<w:r><w:fldChar w:fldCharType="end"/></w:r>'));
 
     // ── הספרים ──
+    // תיקיות ← ספרים ← כותרות הספר: רמות הכותרות של Word (וכך גם חלונית הניווט ותוכן העניינים)
+    let openPath = [];
     spec.books.forEach((book, bIdx) => {
-      const shift = multi ? 1 : 0;
+      const gp = multi ? book.groupPath || [] : [];
+      let k = 0;
+      while (k < openPath.length && k < gp.length && openPath[k] === gp[k]) k++;
+      for (let d = k; d < gp.length; d++) {
+        body.push(para(`<w:r>${rPr({})}${wt(gp[d])}</w:r>`, { style: `Heading${Math.min(6, d + 1)}`, pageBreakBefore: true }));
+      }
+      openPath = gp.slice();
+      const shift = multi ? 1 + gp.length : 0;
       const split = splitLevelOf(book);
-      if (multi) body.push(para(`<w:r>${rPr({})}${wt(book.title)}</w:r>`, { style: 'Heading1', pageBreakBefore: true }));
+      if (multi) body.push(para(`<w:r>${rPr({})}${wt(book.title)}</w:r>`, { style: `Heading${Math.min(6, gp.length + 1)}`, pageBreakBefore: gp.length === k }));
       let first = !multi;
       const counters = {};
       forEachLine(book, opts, (m, entries) => {
@@ -419,7 +428,17 @@
       bodyXml += sec;
     }
 
+    // תיקיות כסעיפים עוטפים: section לכל תיקייה, והספרים בתוכה (FB2 — section מכיל רק sections או רק פסקאות)
+    let openFolders = [];
+    const syncFolders = (gp) => {
+      let k = 0;
+      while (k < openFolders.length && k < gp.length && openFolders[k] === gp[k]) k++;
+      for (let d = openFolders.length; d > k; d--) bodyXml += '</section>';
+      for (let d = k; d < gp.length; d++) bodyXml += `<section><title><p>${escapeXml(gp[d])}</p></title>`;
+      openFolders = gp.slice();
+    };
     spec.books.forEach((book) => {
+      if (multi) syncFolders(book.groupPath || []);
       // קינון סעיפים לפי רמות הכותרות; FB2 מחייב title בתחילת section ו-p אחרי subsections אסור
       const stack = []; // { level, hasChildren }
       let out = '';
@@ -464,6 +483,7 @@
       while (stack.length) { out += '</section>'; stack.pop(); }
       bodyXml += out;
     });
+    if (multi) syncFolders([]);
 
     const date = meta.date.toISOString().slice(0, 10);
     const genre = 'religion';

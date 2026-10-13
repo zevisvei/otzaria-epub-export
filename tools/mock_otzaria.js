@@ -51,9 +51,16 @@
         case 'bookmarks.list':
           return ok([{ id: 'b1', type: 'text', title: 'בראשית', bookId: 'בראשית', bookUid: 'id:1', ref: 'בראשית, פרק ב', index: 30, label: 'להמשיך מכאן' }]);
         case 'library.getTree': {
-          const tree = { title: 'ספרייה', path: '/', books: [], categories: [{ title: 'תורה', path: '/תנך/תורה', categories: [], books: [meta(books['בראשית']), meta(books['ספר החינוך'])] }] };
-          if (p.path) return ok(tree.categories[0]);
-          return ok(p.includeBooks === false ? { ...tree, categories: tree.categories.map((c) => ({ ...c, books: [] })) } : tree);
+          // תנ"ך ← תורה (בראשית) + כתובים ← אחרונים (ספר החינוך)
+          const tanach = { title: 'תנ"ך', path: '/תנ"ך', books: [], categories: [
+            { title: 'תורה', path: '/תנ"ך/תורה', categories: [], books: [meta(books['בראשית'])] },
+            { title: 'כתובים', path: '/תנ"ך/כתובים', books: [], categories: [
+              { title: 'אחרונים', path: '/תנ"ך/כתובים/אחרונים', categories: [], books: [meta(books['ספר החינוך'])] },
+            ] },
+          ] };
+          const strip = (n) => ({ ...n, books: p.includeBooks === false ? [] : n.books, categories: n.categories.map(strip) });
+          if (p.path === '/תנ"ך') return ok(strip(tanach));
+          return ok(strip({ title: 'ספרייה', path: '/', books: [], categories: [tanach] }));
         }
         case 'library.listBookAltStructures':
           return ok(p.bookId === 'בראשית' ? [{ key: 'Parasha', title: 'Parasha', heTitle: 'פרשה' }] : []);

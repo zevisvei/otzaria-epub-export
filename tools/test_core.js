@@ -92,11 +92,27 @@ test('injectAtVisibleOffsets counts visible chars only', () => {
   // מעבר לסוף שורת כותרת — בתוך הכותרת, לפני התג הסוגר
   assert.strictEqual(C.injectAtVisibleOffsets('<h2>פרק ב</h2>', pts([30, '|'])), '<h2>פרק ב|</h2>');
 });
+test('mergeTocs: parashot over chapters by position', () => {
+  const main = [
+    { text: 'בראשית', index: 0, level: 1 },
+    { text: 'פרק א', index: 1, level: 2 },
+    { text: 'פרק ו', index: 100, level: 2 },
+    { text: 'פרק ז', index: 130, level: 2 },
+  ];
+  const alt = [{ text: 'פרשת בראשית', index: 1, level: 1 }, { text: 'פרשת נח', index: 110, level: 1 }];
+  const m = C.mergeTocs(main, alt);
+  assert.deepStrictEqual(m.map((e) => `${e.level}:${e.text}`), [
+    '1:בראשית', '2:פרשת בראשית', '3:פרק א', '3:פרק ו', '2:פרשת נח', '3:פרק ז',
+  ]);
+  // תחום מפרשה עד סופה כולל את הפרקים שבה
+  assert.deepStrictEqual(C.tocRange(m, 1, 1, 200), { start: 1, end: 110 });
+});
 test('crc32', () => {
   assert.strictEqual(C.crc32(new TextEncoder().encode('123456789')), 0xCBF43926);
 });
 test('safeFileName', () => {
   assert.strictEqual(C.safeFileName('a/b:c*?'), 'a b c');
+  assert.strictEqual(C.safeFileName('תנ"ך'), 'תנ״ך');
 });
 
 // ── בניית ספרים לדוגמה ──
@@ -144,6 +160,22 @@ function withPersonal(b) {
   // שורה 2: "<b>(א)</b> וַיֹּ֣אמֶר..." — אופסט גולמי 10 = אחרי "<b>(א)</b>" (3 גלויים) ...
   notes[2] = [{ commentator: 'הערה אישית', html: 'הערה &amp; שלי', personal: true, ref: 'הערה אישית', rawAt: 10 }];
   return { ...b, notes };
+}
+
+// תוכן עניינים משולב: פרשה ופרק שמתחילים באותה שורה
+function mergedBook() {
+  const g = sampleBook('בראשית', 4, false);
+  const alt = [{ text: 'פרשת בראשית', index: 1, level: 1 }, { text: 'פרשת נח', index: 30, level: 1 }];
+  return bookSpec({ ...g, toc: C.mergeTocs(g.toc, alt) });
+}
+
+// תיקייה שלמה: תורה (שני ספרים) ונביאים › ראשונים (ספר אחד)
+function folderBooks() {
+  return [
+    bookSpec(sampleBook('בראשית', 2, false), null, { groupPath: ['תורה'] }),
+    bookSpec(sampleBook('שמות', 2, false), null, { groupPath: ['תורה'] }),
+    bookSpec(sampleBook('יהושע', 2, false), null, { groupPath: ['נביאים', 'ראשונים'] }),
+  ];
 }
 
 function bookSpec(b, range, extra) {
@@ -231,6 +263,10 @@ function tinyPng() {
     build('fb2-line', [bookSpec(ex, null, { continuous: true })], { format: 'fb2', notesMode: 'line' }, false),
     build('personal-bookmarks', [bookSpec(withPersonal(gen), [1, 2], { bookmarks: [{ index: 3, label: 'להמשיך מכאן — בראשית א' }] })], { notesMode: 'popup' }, false),
     build('docx-a5', [bookSpec(ex)], { format: 'docx', pageSize: 'a5', margins: 'narrow' }, false),
+    build('folders', folderBooks(), {}, false),
+    build('merged-toc', [mergedBook()], {}, false),
+    build('folders-docx', folderBooks(), { format: 'docx' }, false),
+    build('folders-fb2', folderBooks(), { format: 'fb2' }, false),
     build('bookmark-continuous', [bookSpec(gen, [1, 2], { continuous: true, bookmarks: [{ index: 8, label: 'באמצע הפרק' }] })], {}, false),
   ]);
 
@@ -349,8 +385,22 @@ function tinyPng() {
     assert.ok(/<a href="b1-\d{4}\.xhtml#b1l3">להמשיך מכאן — בראשית א<\/a>/.test(bm));
     assert.ok(/id="b1l3"/.test(body));
   });
+  test('folders: nav nests folders > books > book TOC, in all formats', () => {
+    const b = (name) => builds.find((x) => x.name === name);
+    const nav = b('folders').files.find((x) => x.path.endsWith('nav.xhtml')).data.replace(/\s+/g, ' ');
+    // תורה ← בראשית ← (שם הספר) ← פרק א
+    assert.ok(/<li><a href="f001\.xhtml">תורה<\/a> <ol> <li><a href="b1-0000\.xhtml">בראשית<\/a> <ol> <li><a href="[^"]+">בראשית<\/a> <ol> <li><a href="[^"]+">פרק א<\/a>/.test(nav), 'nested nav');
+    assert.ok(/<li><a href="b2-0000\.xhtml">שמות<\/a>/.test(nav));
+    assert.ok(/<li><a href="f002\.xhtml">נביאים<\/a> <ol> <li><a href="f003\.xhtml">ראשונים<\/a> <ol> <li><a href="b3-0000\.xhtml">יהושע<\/a>/.test(nav));
+    // דף תיקייה אחד לכל תיקייה (תורה לא חוזרת לפני שמות)
+    assert.strictEqual(b('folders').files.filter((x) => /text\/f\d+\.xhtml$/.test(x.path)).length, 3);
+    const doc = b('folders-docx').files.find((x) => x.path === 'word/document.xml').data;
+    assert.ok(/Heading1"\/><w:pageBreakBefore\/><w:bidi\/><\/w:pPr><w:r>[^]*?תורה/.test(doc) && doc.includes('<w:pStyle w:val="Heading3"/>'));
+    const fb = b('folders-fb2').files[0].data;
+    assert.ok(/<section><title><p>נביאים<\/p><\/title><section><title><p>ראשונים<\/p><\/title><section><title><p>יהושע<\/p>/.test(fb));
+  });
   test('bookmark inside a merged (continuous) paragraph', () => {
-    const bm = builds[18].files.find((x) => x.path.endsWith('bookmarks.xhtml')).data;
+    const bm = builds.find((x) => x.name === 'bookmark-continuous').files.find((x) => x.path.endsWith('bookmarks.xhtml')).data;
     assert.ok(bm.includes('באמצע הפרק'));
   });
   test('docx page size and margins', () => {
