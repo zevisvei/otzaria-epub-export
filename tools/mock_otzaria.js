@@ -41,13 +41,22 @@
       window.__calls.push(m);
       switch (m) {
         case 'storage.get': return ok(null);
+        case 'settings.getMany': return ok({
+          'key-font-family': 'FrankRuhlCLM', 'key-commentators-font-family': 'NotoRashiHebrew',
+          'key-replace-holy-names': true, 'key-holy-name-style': 'kuf', 'key-show-teamim': false,
+          'key-default-nikud': false, 'key-default-remove-punctuation': false, 'key-continuous-reading-mode': true,
+        });
+        case 'fonts.listInstalled': return ok({ platform: 'linux', families: [{ name: 'David', scripts: ['hebrew', 'latin'], monospace: false }] });
+        case 'fonts.resolveFamilies':
+          // בבדיקה: הבייטים של Noto Rashi תחת השם המבוקש
+          return ok({ css: `@font-face{font-family:'${p.families[0].name}';src:url(data:font/ttf;base64,${window.EPUB_FONT_RASHI}) format('truetype');}`, resolved: [p.families[0].name] });
         case 'storage.set': return ok(true);
         case 'library.listRecentBooks': return ok([meta(books['בראשית'])]);
         case 'library.findBooks': return ok(Object.values(books).filter((b) => b.title.includes(p.query)).map(meta));
         case 'library.getBookDetails': {
           const b = byUid(p);
           if (!b) return ok({ title: p.bookId, textSource: { key: 'Sefaria', name: 'ספריא', url: 'https://www.sefaria.org/texts' } });
-          return ok({ ...meta(b), authors: ['משה רבנו'], era: 'תורה שבכתב', categories: 'תנ"ך', categoryPath: '/תנך/תורה',
+          return ok({ ...meta(b), authors: ['משה רבנו'], era: 'תורה שבכתב', categories: 'תנ"ך', categoryPath: '/תנ"ך/תורה',
             shortDescription: 'ספר <b>בראשית</b>', publicationDates: [], publicationPlaces: [], topics: ['תורה'],
             textSource: b.source, lineCount: b.text.split('\n').length });
         }

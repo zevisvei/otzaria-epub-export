@@ -5,7 +5,7 @@
 
   const C = window.EpubCore;
   const HAS_OTZ = typeof window.Otzaria !== 'undefined';
-  const VERSION = '1.1.1'; // יש לעדכן יחד עם manifest.json
+  const VERSION = '1.2.0'; // יש לעדכן יחד עם manifest.json
   const CHUNK = 5000; // תקרת library.getBookContent
   const LINKS_WINDOW = 200; // תקרת library.getLinks
   const LINK_CONTENT_BATCH = 25; // תקרת library.getLinkContent
@@ -13,6 +13,8 @@
 
   const state = {
     books: [], // { key, bookId, bookUid, id, title, details, rights, toc, from, to, commentators: [{title}], cmList, cmOpen, cmFilter }
+    commentatorFonts: {}, // שם מפרש → מזהה גופן
+    pendingFonts: {}, // ערכים שנטענו לפני שרשימת הגופנים מוכנה
     boot: { appVersion: '', platform: '' },
     cancelled: false,
     theme: null,
@@ -232,6 +234,7 @@
             cb.addEventListener('change', () => {
               if (cb.checked) b.commentators.push({ title: c.title });
               else b.commentators = b.commentators.filter((x) => x.title !== c.title);
+              renderFonts();
               saveDraft();
             });
             grid.append(el('label', { class: 'cm-item' }, cb, C.commentatorShortName(c.title, b.title),
@@ -273,28 +276,166 @@
   // ══════════════════════════════════════════════════════════════════════
   // הגדרות וטיוטה
   // ══════════════════════════════════════════════════════════════════════
+  const CHECKS = [
+    ['#optCover', 'cover'], ['#optTitlePage', 'titlePage'], ['#optRightsPage', 'rightsPage'],
+    ['#optRemoveTeamim', 'removeTeamim'], ['#optRemoveNikud', 'removeNikud'],
+    ['#optRemovePunctuation', 'removePunctuation'], ['#optContinuous', 'continuous'],
+    ['#optMarkPerCommentator', 'markPerCommentator'],
+  ];
+
   function readOptions() {
-    return {
+    const o = {
       title: $('#optTitle').value.trim(),
-      cover: $('#optCover').checked,
-      titlePage: $('#optTitlePage').checked,
-      rightsPage: $('#optRightsPage').checked,
-      removeTeamim: $('#optRemoveTeamim').checked,
-      removeNikud: $('#optRemoveNikud').checked,
+      format: $('#optFormat').value,
+      holyNames: $('#optHolyNames').value,
       notesMode: (document.querySelector('input[name="notesMode"]:checked') || {}).value || 'popup',
-      notesFont: $('#optNotesFont').value,
+      bodyFont: $('#optBodyFont').value,
+      notesFontId: $('#optNotesFont').value,
+      commentatorFonts: { ...state.commentatorFonts },
     };
+    for (const [id, k] of CHECKS) o[k] = $(id).checked;
+    return o;
   }
 
   function writeOptions(o) {
     if (!o) return;
     if (typeof o.title === 'string') $('#optTitle').value = o.title;
-    for (const [id, k] of [['#optCover', 'cover'], ['#optTitlePage', 'titlePage'], ['#optRightsPage', 'rightsPage'], ['#optRemoveTeamim', 'removeTeamim'], ['#optRemoveNikud', 'removeNikud']]) {
-      if (typeof o[k] === 'boolean') $(id).checked = o[k];
+    for (const [id, k] of CHECKS) if (typeof o[k] === 'boolean') $(id).checked = o[k];
+    for (const [id, k] of [['#optFormat', 'format'], ['#optHolyNames', 'holyNames']]) {
+      if (o[k] && [...$(id).options].some((x) => x.value === o[k])) $(id).value = o[k];
     }
     const radio = document.querySelector(`input[name="notesMode"][value="${o.notesMode}"]`);
     if (radio) radio.checked = true;
-    if (o.notesFont) $('#optNotesFont').value = o.notesFont;
+    if (typeof o.bodyFont === 'string') state.pendingFonts.body = o.bodyFont;
+    if (typeof o.notesFontId === 'string') state.pendingFonts.notes = o.notesFontId;
+    if (o.commentatorFonts) state.commentatorFonts = { ...o.commentatorFonts };
+    renderFonts();
+    updateFormatHint();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // הגדרות אוצריא כברירת מחדל
+  // ══════════════════════════════════════════════════════════════════════
+  const APP_KEYS = [
+    'key-font-family', 'key-commentators-font-family', 'key-replace-holy-names', 'key-holy-name-style',
+    'key-show-teamim', 'key-default-nikud', 'key-default-remove-punctuation', 'key-continuous-reading-mode',
+  ];
+
+  /** ברירות מחדל מהגדרות התצוגה של המשתמש באוצריא (כשאין טיוטה שמורה). */
+  async function appDefaults() {
+    const r = await call('settings.getMany', { keys: APP_KEYS });
+    const v = r.success && r.data ? r.data : {};
+    const o = {};
+    if (typeof v['key-show-teamim'] === 'boolean') o.removeTeamim = !v['key-show-teamim'];
+    if (typeof v['key-default-nikud'] === 'boolean') o.removeNikud = v['key-default-nikud'];
+    if (typeof v['key-default-remove-punctuation'] === 'boolean') o.removePunctuation = v['key-default-remove-punctuation'];
+    if (typeof v['key-continuous-reading-mode'] === 'boolean') o.continuous = v['key-continuous-reading-mode'];
+    if (v['key-replace-holy-names'] === false) o.holyNames = 'off';
+    else if (v['key-replace-holy-names'] === true) o.holyNames = v['key-holy-name-style'] === 'heh' ? 'heh' : 'kuf';
+    const appFont = (name) => (typeof name === 'string' && name ? (FONT_INDEX.has(`app:${name}`) ? `app:${name}` : `sys:${name}`) : '');
+    o.bodyFont = appFont(v['key-font-family']);
+    o.notesFontId = appFont(v['key-commentators-font-family']);
+    return o;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // גופנים: התוסף, אוצריא, המחשב
+  // ══════════════════════════════════════════════════════════════════════
+  // הגופנים הארוזים באוצריא (pubspec.yaml) — הבייטים מגיעים מ-fonts.resolveFamilies
+  const APP_FONTS = [
+    ['FrankRuhlCLM', 'פרנק רוהל'], ['TaameyDavidCLM', 'טעמי דוד'], ['TaameyAshkenaz', 'טעמי אשכנז'],
+    ['KeterYG', 'כתר'], ['NotoSerifHebrew', 'נוטו סריף'], ['NotoRashiHebrew', 'כתב רש״י (אוצריא)'],
+    ['Shofar', 'שופר'], ['OtzariaAshurit', 'אשורית'], ['Tinos', 'Tinos'],
+  ];
+  const FONT_INDEX = new Map();
+  function registerFont(f) { FONT_INDEX.set(f.id, f); }
+  registerFont({ id: '', label: 'ברירת המחדל של הקורא', group: '' });
+  registerFont({ id: 'plugin:rashi', label: 'כתב רש״י (Noto Rashi Hebrew)', group: 'התוסף', family: 'Noto Rashi Hebrew', load: async () => base64ToBytes(window.EPUB_FONT_RASHI), license: 'SIL OFL 1.1' });
+  for (const [name, label] of APP_FONTS) registerFont({ id: `app:${name}`, label, group: 'אוצריא', family: name, load: () => loadAppFont(name) });
+
+  async function loadAppFont(name) {
+    const r = await call('fonts.resolveFamilies', { families: [{ name, substitutes: [name] }] });
+    return r.success && r.data ? C.fontBytesFromCss(r.data.css) : null;
+  }
+
+  async function loadSystemFontNames() {
+    const r = await call('fonts.listInstalled');
+    const fams = r.success && r.data && Array.isArray(r.data.families) ? r.data.families : [];
+    for (const f of fams.filter((x) => (x.scripts || []).includes('hebrew') && !x.monospace)) {
+      if (!FONT_INDEX.has(`sys:${f.name}`)) registerFont({ id: `sys:${f.name}`, label: f.name, group: 'המחשב', family: f.name });
+    }
+  }
+
+  /** Local Font Access API — בייטים של גופני המחשב; חייב לרוץ ממחוות משתמש. */
+  async function loadLocalFonts() {
+    if (typeof window.queryLocalFonts !== 'function') { notifyError('הדפדפן המוטמע אינו תומך בטעינת גופני המחשב'); return; }
+    let list;
+    try { list = await window.queryLocalFonts(); } catch (e) { notifyError('אין הרשאה לגופני המחשב'); return; }
+    const byFamily = new Map();
+    for (const fd of list) {
+      const cur = byFamily.get(fd.family);
+      // סגנון רגיל עדיף; אחרת הראשון במשפחה
+      if (!cur || /^(regular|normal|book)$/i.test(fd.style)) byFamily.set(fd.family, fd);
+    }
+    let added = 0;
+    for (const [family, fd] of byFamily) {
+      const id = `sys:${family}`;
+      const prev = FONT_INDEX.get(id);
+      registerFont({ id, label: family, group: 'המחשב', family, load: async () => new Uint8Array(await (await fd.blob()).arrayBuffer()) });
+      if (!prev) added++;
+    }
+    renderFonts();
+    notify(`נטענו ${byFamily.size} גופנים מהמחשב${added ? ` (${added} חדשים)` : ''}`);
+  }
+
+  function fontSelect(sel, value, emptyLabel) {
+    const groups = new Map();
+    for (const f of FONT_INDEX.values()) {
+      if (!f.id) continue;
+      if (!groups.has(f.group)) groups.set(f.group, []);
+      groups.get(f.group).push(f);
+    }
+    sel.replaceChildren(el('option', { value: '' }, emptyLabel));
+    for (const [g, fonts] of groups) {
+      const og = el('optgroup', { label: g });
+      for (const f of fonts.sort((x, y) => x.label.localeCompare(y.label, 'he'))) og.append(el('option', { value: f.id }, f.label));
+      sel.append(og);
+    }
+    if (value && !FONT_INDEX.has(value) && value.startsWith('sys:')) {
+      registerFont({ id: value, label: value.slice(4), group: 'המחשב', family: value.slice(4) });
+      return fontSelect(sel, value, emptyLabel);
+    }
+    sel.value = FONT_INDEX.has(value) ? value : '';
+  }
+
+  /** בוררי הגופנים: גוף, מפרשים, ולכל מפרש שנבחר. */
+  function renderFonts() {
+    const body = state.pendingFonts.body ?? $('#optBodyFont').value;
+    const notes = state.pendingFonts.notes ?? $('#optNotesFont').value;
+    state.pendingFonts = {};
+    fontSelect($('#optBodyFont'), body, 'ברירת המחדל של הקורא');
+    fontSelect($('#optNotesFont'), notes, 'כמו גוף הספר, בקטן');
+    const names = [...new Set(state.books.flatMap((b) => b.commentators.map((c) => C.commentatorShortName(c.title, b.title))))];
+    const box = $('#perCommentatorFonts');
+    if (!names.length) { box.replaceChildren(); return; }
+    const grid = el('div', { class: 'cm-fonts' });
+    for (const n of names) {
+      const sel = el('select', { class: 'field' });
+      fontSelect(sel, state.commentatorFonts[n] || '', 'כמו גופן המפרשים');
+      sel.addEventListener('change', () => { state.commentatorFonts[n] = sel.value; saveDraft(); });
+      grid.append(el('label', {}, el('span', { text: n }), sel));
+    }
+    box.replaceChildren(el('div', { class: 'opt-label', text: 'גופן לכל מפרש' }), grid);
+  }
+
+  function updateFormatHint() {
+    const hints = {
+      epub: 'EPUB 3 תקני — לכל קורא ספרים אלקטרוני, וגם לקינדל (Send to Kindle מקבל EPUB).',
+      kepub: 'EPUB עם סימון של Kobo (koboSpan) — מיקום, הדגשות וסטטיסטיקות קריאה מדויקים בקוראי Kobo.',
+      docx: 'מסמך Word לעריכה: הערות שוליים אמיתיות, כותרות לניווט ותוכן עניינים שמתעדכן בפתיחה.',
+      fb2: 'FictionBook 2 — הערות כחלונית ב-KOReader, FBReader ו-Moon+ Reader.',
+    };
+    $('#formatHint').textContent = hints[$('#optFormat').value] || '';
   }
 
   let draftTimer = null;
@@ -315,7 +456,8 @@
   async function loadDraft() {
     const r = await call('storage.get', { key: 'draft' });
     const d = r.success ? r.data : null;
-    if (!d) return;
+    // בלי טיוטה — ברירות המחדל מהגדרות התצוגה של המשתמש באוצריא
+    if (!d) { writeOptions(await appDefaults()); return; }
     writeOptions(d.options);
     for (const s of d.books || []) {
       await addBook({ bookId: s.bookId, bookUid: s.bookUid, id: s.id, title: s.title });
@@ -430,22 +572,23 @@
         // עוגן-נקודה: הסמן לפני התו שבמיקום; עוגן-טווח: אחרי סוף הטווח
         const at = Number.isInteger(a.end) && a.end > a.start ? a.end : a.start;
         if (!entry.anchored.some((x) => x.title === l.targetTitle && x.at === at && x.html === html)) {
-          entry.anchored.push({ title: l.targetTitle, at, label: anchorLabel(a.label, l.targetHeRef), html });
+          entry.anchored.push({ title: l.targetTitle, at, label: anchorLabel(a.label, l.targetHeRef), html, ref: l.targetHeRef || '' });
         }
         continue;
       }
       const parts = entry.merged.get(l.targetTitle) || [];
       if (!parts.includes(html)) parts.push(html);
+      if (!parts.ref) parts.ref = l.targetHeRef || '';
       entry.merged.set(l.targetTitle, parts);
     }
     const rank = (t) => order.get(t) ?? 99;
     const notes = {};
     for (const [ln, entry] of Object.entries(byLine)) {
       notes[ln] = [
-        ...entry.anchored.map((x) => ({ commentator: C.commentatorShortName(x.title, b.title), html: x.html, at: x.at, label: x.label })),
+        ...entry.anchored.map((x) => ({ commentator: C.commentatorShortName(x.title, b.title), html: x.html, at: x.at, label: x.label, ref: x.ref })),
         ...[...entry.merged.entries()]
           .sort((x, y) => rank(x[0]) - rank(y[0]))
-          .map(([title, parts]) => ({ commentator: C.commentatorShortName(title, b.title), html: parts.join('<br/>') })),
+          .map(([title, parts]) => ({ commentator: C.commentatorShortName(title, b.title), html: parts.join('<br/>'), ref: parts.ref })),
       ];
     }
     return notes;
@@ -581,6 +724,8 @@
           toc: toc.filter((e) => e.index >= r.start && e.index < r.end),
           notes,
           commentators: b.commentators.length ? await commentatorRights(b) : [],
+          // "פסוקים ברצף" רק בתנ"ך ובתלמוד, כמו מצב הקריאה הרציף באוצריא
+          continuous: !!opts.continuous && isContinuousCategory(b.details),
         });
       }
       checkCancel();
@@ -609,24 +754,92 @@
         },
         books,
         commentatorNames,
-        options: opts,
+        options: { ...opts, kepub: opts.format === 'kepub', notesFont: 'book' },
         css: window.EPUB_BOOK_CSS,
-        fonts: usesNotes && opts.notesFont === 'rashi' && window.EPUB_FONT_RASHI
-          ? [{ name: 'NotoRashiHebrew.ttf', family: 'Noto Rashi Hebrew', type: 'font/ttf', data: base64ToBytes(window.EPUB_FONT_RASHI) }]
-          : [],
         cover: opts.cover ? await drawCover(title, subtitle, creators.join(', ')) : null,
       };
-      const files = C.buildEpub(spec);
-      const bytes = await C.zip(files, C.nativeDeflateRaw(), (n, total) => progress('אורז…', 0.9 + 0.08 * (n / total)));
+      await applyFonts(spec, opts, commentatorNames, usesNotes);
+      checkCancel();
+      const fmt = FORMATS[opts.format] || FORMATS.epub;
+      let bytes;
+      if (opts.format === 'fb2') {
+        bytes = new TextEncoder().encode(window.EpubFormats.buildFb2(spec));
+      } else {
+        const files = opts.format === 'docx' ? window.EpubFormats.buildDocx(spec) : C.buildEpub(spec);
+        bytes = await C.zip(files, C.nativeDeflateRaw(), (n, total) => progress('אורז…', 0.9 + 0.08 * (n / total)));
+      }
       checkCancel();
       progress('שמירה…', 1);
-      await saveFile(bytes, C.safeFileName(title));
+      await saveFile(bytes, C.safeFileName(title), fmt);
     } catch (e) {
       if (e && e.message === 'cancelled') notify('הייצוא בוטל');
       else notifyError(`הייצוא נכשל: ${(e && e.message) || e}`);
     } finally {
       $('#busy').hidden = true;
     }
+  }
+
+  const FORMATS = {
+    epub: { ext: 'epub', mime: 'application/epub+zip', title: 'שמירת ספר EPUB' },
+    kepub: { ext: 'kepub.epub', mime: 'application/epub+zip', title: 'שמירת ספר Kobo' },
+    docx: { ext: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', title: 'שמירת מסמך Word' },
+    fb2: { ext: 'fb2', mime: 'application/x-fictionbook+xml', title: 'שמירת ספר FB2' },
+  };
+
+  function isContinuousCategory(details) {
+    const path = `${(details && details.categoryPath) || ''} ${(details && details.categories) || ''}`;
+    return /תנ"?ך|תנ״ך|תלמוד|ש"ס|ש״ס/.test(path);
+  }
+
+  /**
+   * גופני הגוף והמפרשים: CSS לכל פורמט, והטמעה ב-EPUB רק כשרישיון הגופן מתיר (fsType).
+   * גופן שאין לו בייטים או שאסור להטמיע — נשאר כשם משפחה (יוצג אם מותקן במכשיר הקורא).
+   */
+  async function applyFonts(spec, opts, commentatorNames, usesNotes) {
+    const embed = opts.format === 'epub' || opts.format === 'kepub';
+    const wanted = new Map(); // id → family
+    const famOf = (id) => (id && FONT_INDEX.has(id) ? FONT_INDEX.get(id).family : null);
+    const body = famOf(opts.bodyFont);
+    const notesDefault = famOf(opts.notesFontId);
+    const css = [];
+    if (body) { wanted.set(opts.bodyFont, body); css.push(`body { font-family: "${body}", serif; }`); }
+    if (usesNotes && notesDefault) {
+      wanted.set(opts.notesFontId, notesDefault);
+      css.push(`.cm-book, .cm-rashi, aside.footnote, li.endnote, p.cm, div.cm-block { font-family: "${notesDefault}", serif; }`);
+    }
+    spec.options.fontClassOf = {};
+    spec.commentatorFonts = {};
+    commentatorNames.forEach((n, i) => {
+      const id = state.commentatorFonts[n];
+      const fam = famOf(id);
+      if (!fam || !usesNotes) return;
+      wanted.set(id, fam);
+      spec.options.fontClassOf[n] = `cmf-${i}`;
+      spec.commentatorFonts[n] = fam;
+      css.push(`aside.cmf-${i}, li.cmf-${i}, p.cmf-${i} { font-family: "${fam}", serif; }`);
+    });
+    // סימון נפרד לכל מפרש: וריאנט קבוע לפי סדר המפרשים, וכתב רש"י לחלק מהווריאנטים
+    spec.options.variantOf = Object.fromEntries(commentatorNames.map((n, i) => [n, i]));
+    if (opts.markPerCommentator && usesNotes) wanted.set('plugin:rashi', 'Noto Rashi Hebrew');
+    spec.extraCss = css.join('\n');
+    spec.bodyFontFamily = body;
+    spec.notesFontFamily = notesDefault;
+    spec.fonts = [];
+    if (!embed) return;
+    const blocked = [];
+    let k = 0;
+    for (const [id, family] of wanted) {
+      const f = FONT_INDEX.get(id);
+      if (!f || !f.load) continue;
+      progress(`טוען גופן: ${family}…`, null);
+      let data = null;
+      try { data = await f.load(); } catch (e) { data = null; }
+      if (!data) continue;
+      if (!C.fontEmbeddingAllowed(data)) { blocked.push(family); continue; }
+      k++;
+      spec.fonts.push({ name: `font-${k}.${C.fontMediaType(data) === 'font/otf' ? 'otf' : 'ttf'}`, family, data, license: f.license || '' });
+    }
+    if (blocked.length) notifyError(`רישיון הגופן אינו מתיר הטמעה: ${blocked.join(', ')} — יוצג רק אם מותקן במכשיר הקורא`);
   }
 
   function base64ToBytes(b64) {
@@ -636,10 +849,11 @@
     return out;
   }
 
-  async function saveFile(bytes, name) {
-    const blob = new Blob([bytes], { type: 'application/epub+zip' });
+  async function saveFile(bytes, name, fmt) {
+    const f = fmt || FORMATS.epub;
+    const blob = new Blob([bytes], { type: f.mime });
     if (!HAS_OTZ) {
-      const a = el('a', { href: URL.createObjectURL(blob), download: `${name}.epub` });
+      const a = el('a', { href: URL.createObjectURL(blob), download: `${name}.${f.ext}` });
       document.body.append(a); a.click(); a.remove();
       return;
     }
@@ -650,7 +864,9 @@
       throw new Error(`העלאת הקובץ נכשלה (${res.status})`);
     }
     const r = await must('fs.commitUserFileWrite', {
-      writeToken: w.writeToken, suggestedName: name, extension: 'epub', title: 'שמירת ספר EPUB',
+      // extension חייבת להיות סיומת פשוטה; ".kepub" נכנס לשם המוצע
+      writeToken: w.writeToken, suggestedName: f.ext === 'kepub.epub' ? `${name}.kepub` : name,
+      extension: f.ext === 'kepub.epub' ? 'epub' : f.ext, title: f.title,
     });
     if (r && !r.cancelled) notify(`הקובץ נשמר: ${r.name || name}`);
   }
@@ -696,6 +912,9 @@
       if (!e.target.closest('.search-row, #searchResults')) { clearTimeout(t); closeSearch(true); }
     });
     $('#exportBtn').addEventListener('click', exportEpub);
+    $('#optFormat').addEventListener('change', updateFormatHint);
+    $('#loadLocalFontsBtn').addEventListener('click', loadLocalFonts);
+    for (const id of ['#optBodyFont', '#optNotesFont']) $(id).addEventListener('change', saveDraft);
     $('#cancelBtn').addEventListener('click', () => { state.cancelled = true; progress('מבטל…', null); });
     document.querySelector('.options').addEventListener('change', saveDraft);
     $('#optTitle').addEventListener('input', saveDraft);
@@ -711,8 +930,11 @@
       state.boot.platform = (payload.app && payload.app.platform) || '';
       applyTheme(payload.theme);
     }
+    await loadSystemFontNames();
+    renderFonts();
     renderBooks();
     await loadDraft();
+    renderFonts();
   }
 
   wire();

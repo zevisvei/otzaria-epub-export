@@ -41,38 +41,87 @@
         <section class="section">
           <div class="section-head"><h2>הגדרות הקובץ</h2></div>
           <div class="card options">
-            <label class="opt-wide">
-              <span class="opt-label">שם הספר בקובץ</span>
-              <input type="text" id="optTitle" class="field" placeholder="ייקבע לפי הספרים שנבחרו" />
-            </label>
-            <div class="opt-grid">
-              <label class="check"><input type="checkbox" id="optCover" checked /> כריכה מעוצבת</label>
-              <label class="check"><input type="checkbox" id="optTitlePage" checked /> דף שער</label>
-              <label class="check"><input type="checkbox" id="optRightsPage" checked /> דף פרטים וזכויות</label>
-              <label class="check"><input type="checkbox" id="optRemoveTeamim" /> הסרת טעמים</label>
-              <label class="check"><input type="checkbox" id="optRemoveNikud" /> הסרת ניקוד</label>
+            <div class="opt-row">
+              <label class="opt-wide">
+                <span class="opt-label">שם הספר בקובץ</span>
+                <input type="text" id="optTitle" class="field" placeholder="ייקבע לפי הספרים שנבחרו" />
+              </label>
+              <label class="opt-narrow">
+                <span class="opt-label">פורמט</span>
+                <select id="optFormat" class="field">
+                  <option value="epub">EPUB — ספר אלקטרוני</option>
+                  <option value="kepub">KEPUB — לקוראי Kobo</option>
+                  <option value="docx">DOCX — Word</option>
+                  <option value="fb2">FB2 — FictionBook</option>
+                </select>
+              </label>
             </div>
+            <p class="muted small" id="formatHint"></p>
+
+            <fieldset class="opt-set">
+              <legend>תוכן</legend>
+              <div class="opt-grid">
+                <label class="check"><input type="checkbox" id="optCover" checked /> כריכה מעוצבת</label>
+                <label class="check"><input type="checkbox" id="optTitlePage" checked /> דף שער</label>
+                <label class="check"><input type="checkbox" id="optRightsPage" checked /> דף פרטים וזכויות</label>
+              </div>
+            </fieldset>
+
+            <fieldset class="opt-set">
+              <legend>תצוגת הטקסט <span class="muted small">— ברירת המחדל לפי הגדרות אוצריא</span></legend>
+              <div class="opt-grid">
+                <label class="check"><input type="checkbox" id="optRemoveTeamim" /> הסרת טעמים</label>
+                <label class="check"><input type="checkbox" id="optRemoveNikud" /> הסרת ניקוד</label>
+                <label class="check"><input type="checkbox" id="optRemovePunctuation" /> הסרת סימני פיסוק</label>
+                <label class="check"><input type="checkbox" id="optContinuous" /> פסוקים ברצף (תנ״ך ותלמוד)</label>
+              </div>
+              <label class="opt-wide">
+                <span class="opt-label">שם הקודש</span>
+                <select id="optHolyNames" class="field">
+                  <option value="off">מוצג כרגיל</option>
+                  <option value="kuf">מוסתר — יקוק (עם הניקוד)</option>
+                  <option value="heh">מוסתר — ה׳</option>
+                </select>
+              </label>
+            </fieldset>
+
             <fieldset class="opt-set">
               <legend>הצגת המפרשים</legend>
-              <label class="radio"><input type="radio" name="notesMode" value="endnotes" checked />
-                <span><b>הערות נפתחות</b> <span class="muted small">— סימן קטן בטקסט; לחיצה פותחת את הפירוש בחלונית. הטקסט עצמו נשמר בסוף הספר ולא מפריע לקריאה.</span></span></label>
+              <label class="radio"><input type="radio" name="notesMode" value="popup" checked />
+                <span><b>חלונית בלבד</b> <span class="muted small">— סימן קטן בטקסט, והפירוש מופיע רק בלחיצה עליו (Apple Books, calibre, Kobo, Thorium). בקורא שאינו תומך בחלוניות ההערות יופיעו בקטן בסוף הפרק. ב-Word: הערות שוליים בתחתית העמוד.</span></span></label>
+              <label class="radio"><input type="radio" name="notesMode" value="endnotes" />
+                <span><b>הערות בסוף הספר</b> <span class="muted small">— לחיצה פותחת חלונית; הטקסט שמור בקובצי הערות נפרדים שמסומנים כתוכן משני (linear="no"). חלק מהקוראים (calibre, KOReader) מציגים אותם בסוף הספר. ב-Word: הערות סיום.</span></span></label>
               <label class="radio"><input type="radio" name="notesMode" value="line" />
                 <span><b>מתחת לכל קטע</b> <span class="muted small">— הפירוש מופיע מיד אחרי הפסוק/הקטע, בגופן נפרד.</span></span></label>
               <label class="radio"><input type="radio" name="notesMode" value="chapter" />
                 <span><b>בסוף כל פרק</b> <span class="muted small">— הערות ממוספרות בסוף הפרק, בגופן נפרד.</span></span></label>
+              <label class="check"><input type="checkbox" id="optMarkPerCommentator" />
+                <span>סימון נפרד לכל מפרש <span class="muted small">— מונה משלו ומראה משלו לסימן (סוגריים, הדגשה, כתב רש״י), כמו באוצריא</span></span></label>
             </fieldset>
-            <label class="opt-wide">
-              <span class="opt-label">גופן המפרשים</span>
-              <select id="optNotesFont" class="field">
-                <option value="rashi">כתב רש״י (מוטמע בקובץ)</option>
-                <option value="book">גופן הספר, קטן יותר</option>
-              </select>
-            </label>
+
+            <fieldset class="opt-set">
+              <legend>גופנים</legend>
+              <div class="opt-row">
+                <label class="opt-wide">
+                  <span class="opt-label">גופן הספר</span>
+                  <select id="optBodyFont" class="field font-select"></select>
+                </label>
+                <label class="opt-wide">
+                  <span class="opt-label">גופן המפרשים</span>
+                  <select id="optNotesFont" class="field font-select"></select>
+                </label>
+              </div>
+              <div id="perCommentatorFonts"></div>
+              <div class="card-row">
+                <button class="btn" id="loadLocalFontsBtn" type="button">טעינת גופני המחשב</button>
+                <span class="muted small" id="fontsHint">גופנים מוטמעים בקובץ רק כשהרישיון שלהם מתיר זאת. ב-Word ו-FB2 נשמר שם הגופן בלבד.</span>
+              </div>
+            </fieldset>
           </div>
         </section>
 
         <div class="export-row">
-          <button class="btn btn-primary btn-lg" id="exportBtn" disabled>יצירת קובץ EPUB</button>
+          <button class="btn btn-primary btn-lg" id="exportBtn" disabled>יצירת הקובץ</button>
           <span class="muted small" id="exportHint">הוסיפו לפחות ספר אחד</span>
         </div>
       </div>
@@ -92,14 +141,15 @@
   <dialog id="aboutDlg" class="dlg">
     <h2>ייצוא EPUB</h2>
     <p id="aboutText"></p>
-    <p class="muted small">גופן כתב רש״י: Noto Rashi Hebrew, ברישיון SIL OFL 1.1.</p>
+    <p class="muted small">גופן כתב רש״י: Noto Rashi Hebrew, ברישיון <a href="../assets/fonts/OFL.txt" target="_blank">SIL OFL 1.1</a>.</p>
     <form method="dialog"><button class="btn">סגירה</button></form>
   </dialog>
 
+  <script src="../js/font-rashi.js"></script>
   <script src="./mock_otzaria.js"></script>
   <script src="../js/core.js"></script>
   <script src="../js/bookcss.js"></script>
-  <script src="../js/font-rashi.js"></script>
+  <script src="../js/formats.js"></script>
   <script src="../js/app.js"></script>
 </body>
 </html>

@@ -61,6 +61,73 @@
     return out;
   }
 
+  // ── שם הקודש — העתק של replaceHolyNames באוצריא (lib/utils/text/text_manipulation.dart) ──
+  const HOLY_NAME = /י(\p{Mn}*)ה(\p{Mn}*)ו(\p{Mn}*)ה(\p{Mn}*)/uy;
+  const IS_MN = /\p{Mn}/u;
+
+  /** האם לפני ההתאמה יש שלוש אותיות עבריות רצופות (אז זו מילה אחרת, למשל "ויהוה" אינה). */
+  function threeLettersBefore(s, at) {
+    let n = 0;
+    for (let i = at - 1; i >= 0; i--) {
+      const ch = s[i];
+      if (IS_MN.test(ch)) continue;
+      if (ch >= 'א' && ch <= 'ת') { if (++n >= 3) return true; continue; }
+      break;
+    }
+    return false;
+  }
+
+  /**
+   * הסתרת שם הוי"ה כמו בתצוגת אוצריא: 'kuf' — ה' הופכת ל-ק' (יקוק) עם הניקוד;
+   * 'heh' — ה' (בלי ניקוד וטעמים של השם).
+   */
+  function replaceHolyNames(s, style) {
+    let out = '';
+    let copied = 0;
+    for (let i = s.indexOf('י'); i >= 0; i = s.indexOf('י', i + 1)) {
+      HOLY_NAME.lastIndex = i;
+      const m = HOLY_NAME.exec(s);
+      if (!m) continue;
+      if (threeLettersBefore(s, i)) { i = HOLY_NAME.lastIndex - 1; continue; }
+      out += s.slice(copied, i) + (style === 'heh' ? "ה'" : `י${m[1]}ק${m[2]}ו${m[3]}ק${m[4]}`);
+      copied = HOLY_NAME.lastIndex;
+      i = copied - 1;
+    }
+    return copied ? out + s.slice(copied) : s;
+  }
+
+  // ── הסרת פיסוק — לפי removePunctuation של אוצריא, ברמת שורה ──
+  /**
+   * מסיר ! ; , ? - — – מכל השורה, ו-. : חוץ מבסוף השורה ובתוך סוגריים.
+   * גרשיים (" ״) נשמרים רק בראשי תיבות (אות אחת אחריהם עד גבול מילה).
+   * תגים וישויות נשמרים בשלמותם.
+   */
+  function removePunctuation(line) {
+    const endMatch = /[.:](\s*)(?:<\/[a-z0-9]+>\s*)*$/i.exec(line);
+    const endAt = endMatch ? endMatch.index : -1;
+    let out = '';
+    let depth = 0;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '<') { const j = line.indexOf('>', i); const e = j < 0 ? line.length : j + 1; out += line.slice(i, e); i = e - 1; continue; }
+      if (ch === '&') { const m = /^&(?:#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/.exec(line.slice(i, i + 12)); if (m) { out += m[0]; i += m[0].length - 1; continue; } }
+      if (ch === '(') { depth++; out += ch; continue; }
+      if (ch === ')') { if (depth) depth--; out += ch; continue; }
+      if (ch === '"' || ch === '״') {
+        // ראשי תיבות: אות לפני, ואחרי — אות אחת (עם סימני ניקוד) ואז גבול מילה
+        const before = line.slice(0, i).replace(/\p{Mn}+$/u, '').slice(-1);
+        const after = /^[א-ת]\p{Mn}*(?![א-ת\p{Mn}])/u.test(line.slice(i + 1));
+        if (/[א-ת]/.test(before) && after) out += ch;
+        continue;
+      }
+      const atEnd = ch === '.' || ch === ':';
+      if (atEnd && (depth > 0 || i >= endAt && endAt >= 0)) { out += ch; continue; }
+      if (atEnd || '!;,?-—–'.includes(ch)) continue;
+      out += ch;
+    }
+    return out.replace(/ {2,}/g, ' ');
+  }
+
   // ══════════════════════════════════════════════════════════════════════
   // ניקוי HTML של שורת אוצריא ל-XHTML תקין
   // ══════════════════════════════════════════════════════════════════════
@@ -119,7 +186,9 @@
         continue;
       }
       if (dropDepth) continue;
-      out += escapeXml(removeMarks(decodeEntities(tok), opts));
+      let text = removeMarks(decodeEntities(tok), opts);
+      if (opts && opts.holyNames && opts.holyNames !== 'off') text = replaceHolyNames(text, opts.holyNames);
+      out += escapeXml(text);
     }
     while (stack.length) out += `</${INLINE_MAP[stack.pop()][0]}>`;
     // תגים ריקים לא תורמים דבר וחלק מהקוראים מציגים אותם כרווח
@@ -337,6 +406,62 @@
     return xhtmlDoc(m.title, parts.join('\n'), { bodyClass: 'front', bodyType: 'frontmatter' });
   }
 
+  /**
+   * פרטי ספר וזכויות כנתונים — משותף לדף הזכויות בכל הפורמטים.
+   * rows: [{ label, parts: [{ text, url? }] }], notices: [טקסט]
+   */
+  function rightsFacts(spec) {
+    const books = spec.books.map((b) => {
+      const d = b.details || {};
+      const r = b.rights;
+      const plain = (label, text) => (text ? { label, parts: [{ text }] } : null);
+      const rows = [
+        plain('מחבר', joinNames(d.authors)),
+        plain('תקופה', [d.era, d.generation].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(' · ')),
+        plain('חיבור', [d.compositionPlace, d.compositionDate].filter(Boolean).join(', ')),
+        plain('דפוס', [(d.publicationPlaces || []).join(', '), (d.publicationDates || []).join(', ')].filter(Boolean).join(', ')),
+        plain('קטגוריה', d.categories || (d.categoryPath || '').replace(/^\//, '').replace(/\//g, ' › ')),
+        plain('טווח', b.rangeLabel || 'הספר כולו'),
+        { label: 'מקור הטקסט', parts: [{ text: r.sourceName, url: r.sourceUrl }] },
+        { label: 'רישיון', parts: [{ text: r.license, url: r.licenseUrl }] },
+        ...(b.commentators || []).map((c) => ({
+          label: `מפרש: ${c.name}`,
+          parts: [{ text: c.rights.sourceName, url: c.rights.sourceUrl }, { text: ' · ' }, { text: c.rights.license, url: c.rights.licenseUrl }],
+        })),
+      ].filter(Boolean);
+      return { title: b.title, rows, description: d.shortDescription ? stripTags(d.shortDescription) : '' };
+    });
+    const m = spec.meta;
+    const all = spec.books.flatMap((b) => [b.rights, ...(b.commentators || []).map((c) => c.rights)]);
+    const notices = [];
+    if (all.some((r) => r.personal)) {
+      notices.push('לשימוש אישי בלבד. חלק מהטקסטים בקובץ זה נמסרו לאוצריא בהרשאה מיוחדת או שזכויותיהם שמורות; אין להעתיק, להפיץ או לפרסם אותם ללא רשות בעלי הזכויות.');
+    }
+    notices.push('הזכויות בטקסטים שמורות לבעליהן כמפורט לעיל, וכל שימוש כפוף לרישיון המקור. העימוד, העיבוד והמטא-דאטה של ספריית אוצריא כפופים לרישיון הספרייה.');
+    notices.push(`קובץ זה הופק ב-${formatDateHe(m.date)} באמצעות התוסף „ייצוא EPUB” לאוצריא${m.appVersion ? ` (גרסה ${m.appVersion})` : ''}. אין לראות בו מהדורה מוגהת; לתיקון טעויות יש לפנות למקור הטקסט.`);
+    return { books, notices, personal: all.some((r) => r.personal) };
+  }
+
+  /** שורת "מקור הטקסט" לשער: שמות המקורות בלי כפילויות. */
+  function sourceList(spec) {
+    return uniqueBy(spec.books.map((b) => b.rights), (r) => r.sourceName);
+  }
+
+  /** מטא-דאטה מסוכמת (זכויות ומקורות) — משותפת לכל הפורמטים. */
+  function completeMeta(spec) {
+    const meta = spec.meta;
+    if (!meta.rights) {
+      const lines = uniqueBy(spec.books.flatMap((b) => [{ t: b.title, r: b.rights }, ...(b.commentators || []).map((c) => ({ t: c.name, r: c.rights }))]), (x) => x.t)
+        .map((x) => `${x.t}: מקור — ${x.r.sourceName}${x.r.sourceUrl ? ` (${x.r.sourceUrl})` : ''}; רישיון — ${x.r.license}${x.r.licenseUrl ? ` (${x.r.licenseUrl})` : ''}`);
+      if (spec.books.some((b) => b.rights.personal || (b.commentators || []).some((c) => c.rights.personal))) lines.push('לשימוש אישי בלבד; אין להפיץ ללא רשות בעלי הזכויות.');
+      meta.rights = lines.join(' | ');
+    }
+    if (!meta.sources) {
+      meta.sources = sourceList(spec).map((r) => (r.sourceUrl ? `${r.sourceName} — ${r.sourceUrl}` : r.sourceName));
+    }
+    return meta;
+  }
+
   function rightsPage(spec) {
     const m = spec.meta;
     const rows = (label, value) => (value ? `<tr><th scope="row">${escapeXml(label)}</th><td>${value}</td></tr>` : '');
@@ -369,7 +494,7 @@
       parts.push('<p><b>לשימוש אישי בלבד.</b> חלק מהטקסטים בקובץ זה נמסרו לאוצריא בהרשאה מיוחדת או שזכויותיהם שמורות; אין להעתיק, להפיץ או לפרסם אותם ללא רשות בעלי הזכויות.</p>');
     }
     if (spec.fonts && spec.fonts.length) {
-      parts.push(`<p>גופן ההערות: ${spec.fonts.map((f) => escapeXml(f.family)).join(', ')} — ${link('SIL Open Font License 1.1', 'https://openfontlicense.org/')}.</p>`);
+      parts.push(`<p>גופנים מוטמעים: ${spec.fonts.map((f) => (f.license ? `${escapeXml(f.family)} (${escapeXml(f.license)})` : escapeXml(f.family))).join(', ')}. ההטמעה נעשתה רק בגופנים שהרישיון שלהם מתיר זאת (שדה fsType).</p>`);
     }
     parts.push('<p>הזכויות בטקסטים שמורות לבעליהן כמפורט לעיל, וכל שימוש כפוף לרישיון המקור. העימוד, העיבוד והמטא-דאטה של ספריית אוצריא כפופים לרישיון הספרייה.</p>');
     parts.push(`<p>קובץ זה הופק ב-${escapeXml(formatDateHe(m.date))} באמצעות התוסף „ייצוא EPUB” לאוצריא${m.appVersion ? ` (גרסה ${escapeXml(m.appVersion)})` : ''}. אין לראות בו מהדורה מוגהת; לתיקון טעויות יש לפנות למקור הטקסט.</p>`);
@@ -388,6 +513,102 @@
     return arr.filter((x) => { const k = key(x); if (seen.has(k)) return false; seen.add(k); return true; });
   }
 
+  // וריאנטים של סמני מפרשים — כמו kLinkAnchorVariants באוצריא (link_anchor_variants.dart):
+  // סוגריים × הדגשה, כדי ששני מפרשים על אותה שורה ייראו אחרת.
+  const MARK_VARIANTS = [
+    { b: true }, { i: true }, { b: true, i: true }, { r: true }, { r: true, b: true }, { u: true },
+    { b: true, d: '[]' }, { i: true, d: '[]' }, { u: true, d: '[]' }, { r: true, d: '[]' },
+    { b: true, d: '{}' }, { i: true, d: '{}' }, { u: true, d: '{}' }, { r: true, d: '{}' },
+  ];
+
+  /**
+   * סמן ההערה ומונה. counters: מצב מונים של היחידה (פרק/ספר).
+   * perCommentator — מונה נפרד ווריאנט לכל מפרש (variantOf: שם → אינדקס);
+   * אחרת מונה משותף, ואות מקור מעוגנת בסוגריים עגולים.
+   * מחזיר { text, variant|null }.
+   */
+  function noteMarker(n, counters, opts) {
+    const per = opts && opts.markPerCommentator;
+    const vIdx = per ? ((opts.variantOf && opts.variantOf[n.commentator]) ?? 0) % MARK_VARIANTS.length : null;
+    const v = vIdx == null ? null : MARK_VARIANTS[vIdx];
+    const d = (v && v.d) || '()';
+    if (n.letter) return { text: `${d[0]}${n.letter}${d[1]}`, variant: vIdx };
+    const key = per ? n.commentator : '';
+    counters[key] = (counters[key] || 0) + 1;
+    const num = hebNum(counters[key]);
+    return { text: per ? `${d[0]}${num}${d[1]}` : num, variant: vIdx };
+  }
+
+  /** CSS למחלקות הווריאנטים (mk-v<i>); fontRashi — שם משפחת כתב רש"י. */
+  function markVariantsCss(fontRashi) {
+    return MARK_VARIANTS.map((v, i) => `.mk-v${i}{${v.b ? 'font-weight:bold;' : 'font-weight:normal;'}${v.i ? 'font-style:italic;' : ''}${v.u ? 'text-decoration:underline;' : ''}${v.r ? `font-family:"${fontRashi}",serif;` : ''}}`).join('\n');
+  }
+
+  /**
+   * מודל שורה משותף לכל הפורמטים: סוג (כותרת/פסקה), HTML נקי, והערות.
+   * מקום כל הערה בשורה מסומן במציין מקום (MARK_OPEN k MARK_CLOSE) לפי סדר notes[k]:
+   * הערות מעוגנות במקומן, ואחריהן — וכל מעוגנת שהמציין שלה נבלע — בסוף השורה.
+   * כל פורמט מחליף את המציינים בסימון ההערה שלו (noteref / footnoteReference / a type=note).
+   */
+  function lineModel(book, i, opts) {
+    const lineNo = book.start + i;
+    const notes = ((book.notes && book.notes[lineNo]) || [])
+      .map((n) => ({ ...n, text: sanitizeInline(n.html, opts) }))
+      .filter((n) => n.text);
+    const anchored = notes.filter((n) => Number.isInteger(n.at) && n.at >= 0).sort((x, y) => x.at - y.at);
+    const trailing = notes.filter((n) => !anchored.includes(n));
+    const ordered = [...anchored, ...trailing].map((n, k) => ({
+      commentator: n.commentator,
+      ref: n.ref || '',
+      text: n.text,
+      anchored: k < anchored.length,
+      // סמן מעוגן: האות שהמקור מדפיס, למשל (א) לשער הציון; אחרת — מספור של הפורמט
+      // אות המקור של עוגן (למשל א לשער הציון); הסוגריים והעיצוב נקבעים ב-noteMarker
+      letter: k < anchored.length && n.label ? n.label : null,
+    }));
+    const token = (k) => `${MARK_OPEN}${k}${MARK_CLOSE}`;
+    const raw = anchored.length
+      ? injectAtVisibleOffsets(book.lines[i], anchored.map((n, k) => ({ at: n.at, text: token(k) })))
+      : book.lines[i];
+    const parsed = parseLine(opts && opts.removePunctuation ? removePunctuation(raw) : raw, opts);
+    const seen = new Set();
+    let html = parsed.html.replace(MARK_RE, (m, k) => { seen.add(Number(k)); return m; });
+    ordered.forEach((n, k) => { if (!seen.has(k)) html += token(k); });
+    return { lineNo, kind: parsed.kind, level: parsed.level, html, notes: ordered };
+  }
+
+  /**
+   * כל מודלי השורות של ספר, עם ערכי תוכן העניינים של כל שורה.
+   * book.continuous: שורות טקסט רצופות (פסוקים) מתאחדות לפסקה אחת עד הכותרת הבאה —
+   * כמו "מצב קריאה רציף" בתנ"ך ובתלמוד באוצריא. מצייני ההערות ממוספרים מחדש.
+   */
+  function bookModels(book, opts) {
+    const tocByLine = new Map();
+    for (const e of book.toc) {
+      const list = tocByLine.get(e.index) || [];
+      list.push(e);
+      tocByLine.set(e.index, list);
+    }
+    const out = [];
+    let merged = null;
+    const flush = () => { if (merged) { out.push(merged); merged = null; } };
+    for (let i = 0; i < book.lines.length; i++) {
+      const m = lineModel(book, i, opts);
+      m.entries = tocByLine.get(m.lineNo) || null;
+      if (!book.continuous || m.kind === 'heading' || m.entries || !m.html.trim()) {
+        flush();
+        out.push(m);
+        continue;
+      }
+      if (!merged) { merged = m; continue; }
+      const shift = merged.notes.length;
+      merged.html += ` ${m.html.replace(MARK_RE, (x, k) => `${MARK_OPEN}${Number(k) + shift}${MARK_CLOSE}`)}`;
+      merged.notes = merged.notes.concat(m.notes);
+    }
+    flush();
+    return out;
+  }
+
   /**
    * ממיר ספר אחד לרשימת קבצי פרקים ונקודות ניווט.
    * book: { title, lines[], start (אינדקס השורה הראשונה בספר המקורי), toc[] (בטווח; index מוחלט),
@@ -396,12 +617,6 @@
   function renderBook(book, bIdx, opts, multi) {
     const files = [];
     const navRoots = [];
-    const tocByLine = new Map();
-    for (const e of book.toc) {
-      const list = tocByLine.get(e.index) || [];
-      list.push(e);
-      tocByLine.set(e.index, list);
-    }
     const levels = book.toc.map((e) => e.level);
     const minLevel = levels.length ? Math.min(...levels) : 1;
     // מתחילים קובץ חדש בכותרות העליונות (ובאחת מתחתיהן אם העליונה היא רק שם הספר)
@@ -414,12 +629,13 @@
     let cur = null;
     let fileSeq = 0;
     let noteSeq = 0;
+    let koboPara = 0;
     const prefix = `b${bIdx + 1}`;
 
     function openFile() {
       fileSeq++;
       const base = `${prefix}-${String(fileSeq).padStart(4, '0')}`;
-      cur = { name: `${base}.xhtml`, notesName: `${base}-notes.xhtml`, body: [], notes: [], size: 0, title: book.title, noteCount: 0 };
+      cur = { name: `${base}.xhtml`, notesName: `${base}-notes.xhtml`, body: [], notes: [], size: 0, title: book.title, noteCount: 0, counters: {} };
       files.push(cur);
     }
     openFile();
@@ -434,9 +650,9 @@
       stack.push(node);
     }
 
-    for (let i = 0; i < book.lines.length; i++) {
-      const lineNo = book.start + i;
-      const entries = tocByLine.get(lineNo);
+    for (const m of bookModels(book, opts)) {
+      const lineNo = m.lineNo;
+      const entries = m.entries;
       if (entries && cur.body.length && entries.some((e) => e.level <= splitLevel)) openFile();
       else if (cur.size > MAX_FILE_CHARS) openFile();
       const anchor = `${prefix}l${lineNo}`;
@@ -444,62 +660,52 @@
       if (entries) for (const e of entries) addNav(e, cur.name, anchor);
       if (entries && cur.body.length === 0) cur.title = stripTags(entries[0].text) || book.title;
 
-      // הערות מעוגנות (עם `at`) נכנסות במקומן בשורה; השאר — בסוף השורה
-      const lineNotes = ((book.notes && book.notes[lineNo]) || [])
-        .map((n) => ({ ...n, text: sanitizeInline(n.html, opts) }))
-        .filter((n) => n.text);
-      const anchored = lineNotes.filter((n) => Number.isInteger(n.at) && n.at >= 0).sort((x, y) => x.at - y.at);
-      const trailing = lineNotes.filter((n) => !anchored.includes(n));
-      const raw = anchored.length
-        ? injectAtVisibleOffsets(book.lines[i], anchored.map((n, k) => ({ at: n.at, text: `${MARK_OPEN}${k}${MARK_CLOSE}` })))
-        : book.lines[i];
-      const parsed = parseLine(raw, opts);
-
       const after = [];
       const refs = [];
-      for (const n of [...anchored, ...trailing]) {
-        const isAnchored = anchored.includes(n);
-        // סמן מעוגן: האות שהמקור מדפיס, למשל (א) לשער הציון; אחרת מספור רץ בפרק
-        const label = isAnchored && n.label ? `(${n.label})` : null;
+      for (const n of m.notes) {
+        const mk = notesMode === 'line' ? null : noteMarker(n, cur.counters, opts);
+        const lineMark = n.letter ? noteMarker(n, {}, opts).text : null;
+        const mkCls = (base) => `${base}${mk && mk.variant != null ? ` mk-v${mk.variant}` : ''}`;
+        const fontCls = opts.fontClassOf && opts.fontClassOf[n.commentator] ? ` ${opts.fontClassOf[n.commentator]}` : '';
         const who = `<b class="cm-who">${escapeXml(n.commentator)}</b>`;
+        // כמו חלונית התצוגה המקדימה של אוצריא: כותרת ההפניה המלאה, קו, ואז הטקסט
+        const noteBody = (back) => `<p class="note-head">${back} ${escapeXml(n.ref || n.commentator)}</p><p class="note-text">${n.text}</p>`;
         if (notesMode === 'line') {
-          refs.push(label ? `<span class="anchor-mark">${escapeXml(label)}</span>` : '');
-          after.push(`<p class="cm">${label ? `<span class="anchor-mark">${escapeXml(label)}</span> ` : ''}${who} ${n.text}</p>`);
+          refs.push(lineMark ? `<span class="anchor-mark">${escapeXml(lineMark)}</span>` : '');
+          after.push(`<p class="cm${fontCls}">${lineMark ? `<span class="anchor-mark">${escapeXml(lineMark)}</span> ` : ''}${who} ${n.text}</p>`);
           continue;
         }
         noteSeq++;
-        // המספור הרץ רק להערות בלי אות מקור, כדי שלא ידלג על אותיות
-        if (!label) cur.noteCount++;
         const nid = `${prefix}n${noteSeq}`;
         const rid = `${prefix}r${noteSeq}`;
-        const marker = escapeXml(label || hebNum(cur.noteCount));
+        const marker = escapeXml(mk.text);
         if (notesMode === 'popup') {
           // חלונית בלבד (EPUB 3 footnote): ההערה ב-<aside> באותו קובץ. קוראים שתומכים בחלוניות
           // (Apple Books, Kobo, Google Play Books, KOReader) מסתירים אותה ומציגים רק בלחיצה על הסמן
-          refs.push(`<a class="noteref" epub:type="noteref" role="doc-noteref" id="${rid}" href="#${nid}">${marker}</a>`);
-          cur.notes.push(`<aside class="footnote" epub:type="footnote" role="doc-footnote" id="${nid}"><p><span class="note-mark">${marker}</span> ${who} ${n.text}</p></aside>`);
+          refs.push(`<a class="${mkCls('noteref')}" epub:type="noteref" role="doc-noteref" id="${rid}" href="#${nid}">${marker}</a>`);
+          // קישור חזרה לטקסט: Kindle מחייב קישור דו-כיווני להערה קופצת (KPG §11.3.12), ו-DPUB-ARIA מדגים doc-backlink
+          cur.notes.push(`<aside class="footnote${fontCls}" epub:type="footnote" role="doc-footnote" id="${nid}">${noteBody(`<a class="${mkCls('noteback')}" role="doc-backlink" href="#${rid}">${marker}</a>`)}</aside>`);
         } else if (notesMode === 'chapter') {
           // הערות גלויות בסוף הפרק: קישורים רגילים, בלי epub:type, כדי שאף קורא לא יסתיר אותן
-          refs.push(`<a class="noteref" id="${rid}" href="#${nid}">${marker}</a>`);
-          cur.notes.push(`<p class="cm" id="${nid}"><a class="noteback" href="#${rid}">${marker}</a> ${who} ${n.text}</p>`);
+          refs.push(`<a class="${mkCls('noteref')}" id="${rid}" href="#${nid}">${marker}</a>`);
+          cur.notes.push(`<p class="cm${fontCls}" id="${nid}"><a class="${mkCls('noteback')}" href="#${rid}">${marker}</a> ${who} ${n.text}</p>`);
         } else {
           // הערות סיום: הטקסט בקובץ נפרד בסוף הספר, ונפתח כחלונית. EPUB SSV 1.1: endnote הוצא משימוש —
             // ההערה הבודדת בתוך section endnotes מסומנת footnote (בלי role על li, לפי DAISY KB)
-          refs.push(`<a class="noteref" epub:type="noteref" role="doc-noteref" id="${rid}" href="${cur.notesName}#${nid}">${marker}</a>`);
-          cur.notes.push(`<li class="endnote" epub:type="footnote" id="${nid}"><p><a class="noteback" role="doc-backlink" href="${cur.name}#${rid}">${marker}</a> ${who} ${n.text}</p></li>`);
+          refs.push(`<a class="${mkCls('noteref')}" epub:type="noteref" role="doc-noteref" id="${rid}" href="${cur.notesName}#${nid}">${marker}</a>`);
+          cur.notes.push(`<li class="endnote${fontCls}" epub:type="footnote" id="${nid}">${noteBody(`<a class="${mkCls('noteback')}" role="doc-backlink" href="${cur.name}#${rid}">${marker}</a>`)}</li>`);
         }
       }
-      // מחליפים את מצייני המקום בסמנים; מציין שנבלע (למשל בתוך <script>) — הסמן עובר לסוף השורה,
-      // כדי שלכל הערה יהיה תמיד קישור חוזר תקין
-      const placed = new Set();
-      let html = parsed.html.replace(MARK_RE, (m, k) => { placed.add(Number(k)); return refs[Number(k)] || ''; });
-      anchored.forEach((n, k) => { if (!placed.has(k)) html += refs[k]; });
-      for (let k = anchored.length; k < refs.length; k++) html += refs[k];
+      const html = m.html.replace(MARK_RE, (x, k) => refs[Number(k)] || '');
       if (!html && !idAttr && !after.length) continue;
       let el;
-      if (parsed.kind === 'heading') {
-        const lvl = Math.min(6, parsed.level + headingShift);
+      if (m.kind === 'heading') {
+        const lvl = Math.min(6, m.level + headingShift);
         el = `<h${lvl}${idAttr} class="h">${html || escapeXml(stripTags(entries ? entries[0].text : ''))}</h${lvl}>`;
+      } else if (html && opts.kepub) {
+        // KEPUB: Kobo עוקב אחרי מיקום, הדגשות וסטטיסטיקות לפי koboSpan (kobo.<פסקה>.<קטע>)
+        koboPara++;
+        el = `<p${idAttr}><span class="koboSpan" id="kobo.${koboPara}.1">${html}</span></p>`;
       } else {
         el = html ? `<p${idAttr}>${html}</p>` : `<span${idAttr}></span>`;
       }
@@ -513,12 +719,14 @@
     const noteDocs = [];
     for (const f of used) {
       let body = `<section epub:type="chapter">\n${f.body.join('\n')}\n</section>`;
+      if (opts.kepub) body = `<div id="book-columns"><div id="book-inner">\n${body}`;
       if (f.notes.length && notesMode === 'popup') {
         body += `\n<div class="footnotes ${fontClass}">\n${f.notes.join('\n')}\n</div>`;
       }
       if (f.notes.length && notesMode === 'chapter') {
         body += `\n<section class="chapter-notes ${fontClass}">\n<h2 class="notes-title">הערות</h2>\n${f.notes.join('\n')}\n</section>`;
       }
+      if (opts.kepub) body += '\n</div></div>';
       docs.push({ name: f.name, content: xhtmlDoc(f.title || book.title, body, { bodyType: 'bodymatter' }) });
       if (f.notes.length && notesMode === 'endnotes') {
         const title = `הערות — ${f.title || book.title}`;
@@ -657,18 +865,7 @@
       return id;
     };
 
-    // מטא-דאטה מסוכמת
-    const meta = spec.meta;
-    if (!meta.rights) {
-      const lines = uniqueBy(spec.books.flatMap((b) => [{ t: b.title, r: b.rights }, ...(b.commentators || []).map((c) => ({ t: c.name, r: c.rights }))]), (x) => x.t)
-        .map((x) => `${x.t}: מקור — ${x.r.sourceName}${x.r.sourceUrl ? ` (${x.r.sourceUrl})` : ''}; רישיון — ${x.r.license}${x.r.licenseUrl ? ` (${x.r.licenseUrl})` : ''}`);
-      if (spec.books.some((b) => b.rights.personal || (b.commentators || []).some((c) => c.rights.personal))) lines.push('לשימוש אישי בלבד; אין להפיץ ללא רשות בעלי הזכויות.');
-      meta.rights = lines.join(' | ');
-    }
-    if (!meta.sources) {
-      meta.sources = uniqueBy(spec.books.map((b) => b.rights), (r) => r.sourceName)
-        .map((r) => (r.sourceUrl ? `${r.sourceName} — ${r.sourceUrl}` : r.sourceName));
-    }
+    completeMeta(spec);
 
     if (spec.cover) {
       out.push({ path: `OEBPS/images/${spec.cover.name}`, data: spec.cover.data, store: true });
@@ -720,11 +917,11 @@
 
     out.push({ path: 'OEBPS/text/nav.xhtml', data: navDoc(spec, navTree, landmarks) });
     spine.push({ id: navId, linear: false });
-    let css = spec.css || '';
+    let css = `${spec.css || ''}\n${markVariantsCss('Noto Rashi Hebrew')}\n${spec.extraCss || ''}`;
     for (const f of spec.fonts || []) {
       out.push({ path: `OEBPS/fonts/${f.name}`, data: f.data, store: true });
-      items.push({ id: `font-${f.name.replace(/[^A-Za-z0-9]/g, '')}`, href: `fonts/${f.name}`, type: f.type || 'font/ttf' });
-      css = `@font-face { font-family: "${f.family}"; src: url("../fonts/${f.name}"); font-weight: normal; font-style: normal; }\n${css}`;
+      items.push({ id: `font-${f.name.replace(/[^A-Za-z0-9]/g, '')}`, href: `fonts/${f.name}`, type: f.type || fontMediaType(f.data) });
+      css = `@font-face { font-family: "${f.family}"; src: url("../fonts/${f.name}"); }\n${css}`;
     }
     css = css.replace(/@charset "UTF-8";\n?/g, '');
     out.push({ path: 'OEBPS/css/book.css', data: `@charset "UTF-8";\n${css}` });
@@ -738,6 +935,51 @@
       { path: 'META-INF/container.xml', data: CONTAINER_XML },
       ...out,
     ];
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // גופנים
+  // ══════════════════════════════════════════════════════════════════════
+
+  /**
+   * האם רישיון הגופן מתיר הטמעה במסמך — שדה fsType בטבלת OS/2 (OpenType spec):
+   * 0x0002 לבדו = Restricted License embedding (אסור). WOFF/TTC/פגום — false.
+   */
+  function fontEmbeddingAllowed(bytes) {
+    try {
+      const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      let base = 0;
+      if (dv.getUint32(0) === 0x74746366) base = dv.getUint32(12); // 'ttcf' — הגופן הראשון באוסף
+      const tag = dv.getUint32(base);
+      if (tag !== 0x00010000 && tag !== 0x4F54544F && tag !== 0x74727565) return false; // TrueType / 'OTTO' / 'true'
+      const numTables = dv.getUint16(base + 4);
+      for (let t = 0; t < numTables; t++) {
+        const rec = base + 12 + t * 16;
+        if (dv.getUint32(rec) === 0x4F532F32) { // 'OS/2'
+          const fsType = dv.getUint16(dv.getUint32(rec + 8) + 8);
+          return (fsType & 0x000F) !== 0x0002;
+        }
+      }
+      return true; // בלי OS/2 אין הגבלה מוצהרת
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /** סוג המדיה של קובץ גופן לפי החתימה. */
+  function fontMediaType(bytes) {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return dv.getUint32(0) === 0x4F54544F ? 'font/otf' : 'font/ttf';
+  }
+
+  /** מפענח data:URL של @font-face (כפי ש-fonts.resolveFamilies מחזיר) לבייטים. */
+  function fontBytesFromCss(css) {
+    const m = /url\(\s*['"]?data:[^;,]+;base64,([A-Za-z0-9+/=]+)['"]?\s*\)/.exec(css || '');
+    if (!m) return null;
+    const bin = typeof atob === 'function' ? atob(m[1]) : Buffer.from(m[1], 'base64').toString('binary');
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -860,7 +1102,8 @@
   }
 
   const api = {
-    escapeXml, decodeEntities, stripTags, removeMarks, sanitizeInline, parseLine, injectAtVisibleOffsets,
+    fontEmbeddingAllowed, fontMediaType, fontBytesFromCss, bookModels, noteMarker, markVariantsCss, MARK_VARIANTS, escapeXml, decodeEntities, stripTags, removeMarks, replaceHolyNames, removePunctuation, sanitizeInline, parseLine, injectAtVisibleOffsets, lineModel,
+    MARK_RE, joinNames, uniqueBy, xhtmlDoc, rightsFacts, sourceList, completeMeta,
     hebNum, commentatorShortName, tocRange, normalizeSourceKey, rightsFor,
     buildEpub, zip, crc32, nativeDeflateRaw, uuidV4, safeFileName, formatDateHe,
     MAX_FILE_CHARS,

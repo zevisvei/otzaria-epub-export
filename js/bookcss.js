@@ -85,6 +85,10 @@ div.footnotes { margin-top: 2em; padding-top: 0.5em; border-top: 1px solid #999;
 aside.footnote { font-size: 0.9em; line-height: 1.45; }
 aside.footnote p { margin: 0; }
 .note-mark { font-weight: bold; }
+/* תוכן ההערה בסגנון חלונית התצוגה המקדימה של אוצריא: כותרת הפניה קטנה ומודגשת, קו, טקסט */
+p.note-head { margin: 0 0 0.25em; padding-bottom: 0.25em; border-bottom: 1px solid #c9c2b3; font-size: 0.8em; font-weight: bold; color: #3d5a99; }
+p.note-head a { color: inherit; text-decoration: none; }
+p.note-text { margin: 0; }
 
 /* הערות סיום (נפתחות כחלונית) */
 section.endnotes { font-size: 0.9em; line-height: 1.5; }

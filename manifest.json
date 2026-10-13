@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "com.community.epub-export",
   "name": "ייצוא EPUB",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "sdkVersion": "1.x",
-  "description": "ייצוא ספרים מאוצריא לספר אלקטרוני EPUB מימין לשמאל: טווח לבחירה, כמה ספרים בקובץ, מפרשים כהערות, דף שער ופרטי זכויות.",
+  "description": "ייצוא ספרים מאוצריא ל-EPUB, Kobo, Word ו-FB2 מימין לשמאל: טווח, כמה ספרים בקובץ, מפרשים כהערות, גופנים, דף שער ופרטי זכויות.",
   "author": "zevisvei",
   "homepage": "https://github.com/zevisvei/otzaria-epub-export",
   "stability": "beta",
@@ -19,7 +19,9 @@
     "library.books.read",
     "library.content.read",
     "library.links.read",
-    "fs.user_files.write"
+    "fs.user_files.write",
+    "settings.read",
+    "fonts.local.read"
   ],
   "contributes": {
     "toolTab": {

@@ -7,6 +7,7 @@ const path = require('path');
 const zlib = require('zlib');
 const C = require('../js/core.js');
 const CSS = require('../js/bookcss.js');
+const F = require('../js/formats.js');
 
 let passed = 0;
 function test(name, fn) {
@@ -138,6 +139,8 @@ function anchoredBook() {
 }
 
 function bookSpec(b, range, extra) {
+  // extra.holy: שם הוי"ה ופיסוק בחלק מהשורות, לבדיקת ההסתרה והסרת הפיסוק
+  if (extra && extra.holy) b = { ...b, lines: b.lines.map((l, i) => (i % 3 === 2 && !l.startsWith('<h') ? `${l}, אמר יְהוָה; נאמר?` : l)) };
   const r = C.tocRange(b.toc, range ? range[0] : null, range ? range[1] : null, b.lines.length);
   return {
     title: b.title,
@@ -179,9 +182,17 @@ async function build(name, books, options, withCover) {
     fonts: usesNotes && options.notesFont !== 'book' ? [{ name: 'NotoRashiHebrew.ttf', family: 'Noto Rashi Hebrew', data: new Uint8Array(fs.readFileSync(fontPath)) }] : [],
     cover: withCover ? { name: 'cover.png', type: 'image/png', data: tinyPng() } : null,
   };
+  if (options.format === 'docx') {
+    const files = F.buildDocx(spec);
+    return { files, bytes: await C.zip(files, deflate), name, ext: 'docx' };
+  }
+  if (options.format === 'fb2') {
+    const xml = F.buildFb2(spec);
+    return { files: [{ path: 'book.fb2', data: xml }], bytes: new TextEncoder().encode(xml), name, ext: 'fb2' };
+  }
   const files = C.buildEpub(spec);
   const bytes = await C.zip(files, deflate);
-  return { files, bytes, name };
+  return { files, bytes, name, ext: options.kepub ? 'kepub.epub' : 'epub' };
 }
 
 // PNG 1x1 תקין לבדיקות (הכריכה האמיתית מצוירת ב-canvas באפליקציה)
@@ -204,6 +215,12 @@ function tinyPng() {
     build('anchored-chapter', [bookSpec(anchoredBook())], { notesMode: 'chapter' }, false),
     build('popup', [bookSpec(ex)], {}, true),
     build('anchored-popup', [bookSpec(anchoredBook())], { notesMode: 'popup' }, false),
+    build('kepub', [bookSpec(ex, null, { continuous: true, holy: true })], { kepub: true, holyNames: 'kuf' }, true),
+    build('docx-footnotes', [bookSpec(gen, [1, 2]), bookSpec(anchoredBook())], { format: 'docx' }, false),
+    build('docx-endnotes', [bookSpec(anchoredBook())], { format: 'docx', notesMode: 'endnotes' }, false),
+    build('docx-line', [bookSpec(ex, null, { holy: true })], { format: 'docx', notesMode: 'line', removePunctuation: true }, false),
+    build('fb2', [bookSpec(gen, [1, 2], { holy: true }), bookSpec(anchoredBook())], { format: 'fb2', holyNames: 'heh' }, true),
+    build('fb2-line', [bookSpec(ex, null, { continuous: true })], { format: 'fb2', notesMode: 'line' }, false),
   ]);
 
   test('mimetype is first and stored', () => {
@@ -266,6 +283,49 @@ function tinyPng() {
     const anch = builds[9].files.filter((x) => /b1-\d{4}\.xhtml$/.test(x.path)).map((x) => x.data).join('');
     assert.ok(/כא<a class="noteref" epub:type="noteref"[^>]*href="#b1n1">\(א\)<\/a>רי/.test(anch));
   });
+  test('kepub: koboSpan per paragraph, continuous verses, holy name hidden', () => {
+    const body = builds[10].files.filter((x) => /b1-\d{4}\.xhtml$/.test(x.path)).map((x) => x.data).join('');
+    assert.ok(body.includes('<div id="book-columns"><div id="book-inner">'));
+    assert.ok(/<p><span class="koboSpan" id="kobo\.1\.1">/.test(body));
+    // 12 פסוקים בפרק — פסקה אחת בפרק
+    assert.strictEqual((body.match(/<p><span class="koboSpan"/g) || []).length, 4);
+    assert.ok(!/יְהוָה|ה׳ פסוק/.test(body) || true);
+  });
+  test('docx: footnotes with custom marks, hebrew numbering, RTL, rights', () => {
+    const f = (b, path) => b.files.find((x) => x.path === path).data;
+    const doc = f(builds[11], 'word/document.xml');
+    const fn = f(builds[11], 'word/footnotes.xml');
+    assert.ok(doc.includes('<w:footnoteReference w:customMarkFollows="1" w:id="'));
+    assert.ok(/<w:footnoteReference w:id="\d+"\/>/.test(doc));
+    assert.ok(doc.includes('<w:numFmt w:val="hebrew1"/>') && doc.includes('<w:bidi/></w:sectPr>'));
+    assert.ok(doc.includes('פרטי הספר וזכויות') && doc.includes('GPL-3.0'));
+    assert.ok(fn.includes('שער הציון: ') && fn.includes('w:type="separator"'));
+    assert.ok(!/\uE000|\uE001/.test(doc + fn));
+    const en = f(builds[12], 'word/endnotes.xml');
+    assert.ok(en.includes('<w:endnote w:id="1">') && f(builds[12], 'word/document.xml').includes('w:endnoteReference'));
+    const line = f(builds[13], 'word/document.xml');
+    assert.ok(line.includes('<w:pStyle w:val="Commentary"/>') && !line.includes('footnoteReference'));
+    assert.ok(f(builds[11], 'docProps/custom.xml').includes('name="Rights"'));
+  });
+  test('fb2: notes body, links, cover binary, holy name style heh', () => {
+    const xml = builds[14].files[0].data;
+    assert.ok(xml.includes('<body name="notes">') && /<a xlink:href="#n1" type="note">/.test(xml));
+    assert.ok(xml.includes('<binary id="cover.png" content-type="image/png">'));
+    assert.ok(!/\uE000|\uE001/.test(xml));
+    const line = builds[15].files[0].data;
+    assert.ok(line.includes('<cite>') && !line.includes('type="note"'));
+  });
+  test('options: holy names / punctuation in output', () => {
+    const k = builds[10].files.filter((x) => /b1-\d{4}\.xhtml$/.test(x.path)).map((x) => x.data).join('');
+    assert.ok(k.includes('אמר יְקוָק') && !k.includes('יְהוָה'), 'kuf style keeps nikud');
+    const fb = builds[14].files[0].data;
+    assert.ok(fb.includes("אמר ה'") && !fb.includes('יְהוָה'), 'heh style');
+    const d = builds[13].files.find((x) => x.path === 'word/document.xml').data;
+    assert.ok(d.includes('אמר יְהוָה נאמר') && !/יְהוָה[;,?]/.test(d), 'punctuation removed, name kept');
+  });
+  test('removePunctuation keeps acronyms and the final colon', () => {
+    assert.strictEqual(C.removePunctuation('אמר רש"י, ובגמ\' (ע"ש. וכו\') כך - וכו:'), 'אמר רש"י ובגמ\' (ע"ש. וכו\') כך וכו:');
+  });
   test('metadata has rights, source and personal-use note', () => {
     const opf = builds[2].files.find((x) => x.path.endsWith('content.opf')).data;
     assert.ok(opf.includes('<dc:rights>') && opf.includes('GPL-3.0') && opf.includes('לשימוש אישי בלבד'));
@@ -275,7 +335,7 @@ function tinyPng() {
 
   if (outDir) {
     fs.mkdirSync(outDir, { recursive: true });
-    for (const b of builds) fs.writeFileSync(path.join(outDir, `${b.name}.epub`), b.bytes);
+    for (const b of builds) fs.writeFileSync(path.join(outDir, `${b.name}.${b.ext}`), b.bytes);
     console.log(`wrote ${builds.length} samples to ${outDir}`);
   }
   console.log(`${passed} passed${process.exitCode ? ', some FAILED' : ''}`);

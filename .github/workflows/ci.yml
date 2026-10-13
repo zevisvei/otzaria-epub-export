@@ -17,15 +17,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
-      - name: Unit tests + epubcheck on sample books
+      - name: Unit tests + epubcheck (EPUB/KEPUB) + FB2 schema on sample books
         run: |
           curl -sSL -o epubcheck.zip https://github.com/w3c/epubcheck/releases/download/v5.4.0/epubcheck-5.4.0.zip
           unzip -q epubcheck.zip -d "$RUNNER_TEMP"
-          tools/check_samples.sh "$RUNNER_TEMP/epubcheck-5.4.0/epubcheck.jar"
+          python3 -m pip install --quiet lxml
+          mkdir -p "$RUNNER_TEMP/fb2xsd"
+          for f in FictionBook.xsd FictionBookGenres.xsd FictionBookLang.xsd FictionBookLinks.xsd FictionNotes.xsd; do
+            curl -sSL -o "$RUNNER_TEMP/fb2xsd/$f" "https://raw.githubusercontent.com/gribuser/fb2/4d3740e319039911c30d291abb0c8b26ec99703b/$f"
+          done
+          FB2_XSD_DIR="$RUNNER_TEMP/fb2xsd" tools/check_samples.sh "$RUNNER_TEMP/epubcheck-5.4.0/epubcheck.jar"
 
   validate:
     runs-on: ubuntu-latest
