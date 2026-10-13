@@ -9,7 +9,7 @@ import os
 import zipfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-EXCLUDE_DIRS = {'tools', 'dist', '.git', 'node_modules', '.vscode', '.idea', '.claude'}
+EXCLUDE_DIRS = {'tools', 'dist', 'screenshots', '.git', 'node_modules', '.vscode', '.idea', '.claude'}
 
 
 def main():
