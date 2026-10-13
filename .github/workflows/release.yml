@@ -3,18 +3,48 @@ name: Publish plugin
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # מפרסם לחנות רק כשהגרסה ב-manifest.json עלתה; דחיפה ראשונה ממתינה לאישור מנהל
-      - uses: Otzaria/otzaria-plugin-validator@v1
+
+      # מאמת ובונה תמיד; מפרסם לחנות כשהסודות מוגדרים והגרסה ב-manifest.json עלתה.
+      # דחיפה ראשונה (תוסף חדש) ממתינה לאישור מנהל.
+      - id: otzaria
+        uses: Otzaria/otzaria-plugin-validator@v1
         with:
           fail-on-warnings: 'true'
+          build: 'true'
           otzaria-user: ${{ secrets.OTZARIA_USER }}
           otzaria-password: ${{ secrets.OTZARIA_PASSWORD }}
           reports-consent: 'true'
           screenshots: |
             screenshots/main.png
+
+      # רליס ב-GitHub לכל גרסה חדשה (v<version>), עם קובץ ה-.otzplugin מצורף
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLUGIN_FILE: ${{ steps.otzaria.outputs.plugin-file }}
+          SHA256: ${{ steps.otzaria.outputs.sha256 }}
+        run: |
+          VERSION=$(jq -r .version manifest.json)
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists — skipping"
+            exit 0
+          fi
+          {
+            echo "## ייצוא EPUB $VERSION"
+            echo
+            echo "התקנה: באוצריא — הגדרות ← תוספים ← התקנה מקובץ, ובחירת הקובץ \`$(basename "$PLUGIN_FILE")\`."
+            echo
+            echo "SHA-256: \`$SHA256\`"
+          } > notes.md
+          gh release create "$TAG" "$PLUGIN_FILE" --title "ייצוא EPUB $VERSION" --notes-file notes.md --target "$GITHUB_SHA"
