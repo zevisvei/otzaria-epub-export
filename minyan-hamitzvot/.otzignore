@@ -1,0 +1,5 @@
+tools/
+dist/
+screenshots/
+.cache/
+STORE_DESCRIPTION.txt

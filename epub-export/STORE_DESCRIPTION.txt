@@ -36,4 +36,4 @@
 • ספרים שאוצריא חוסמת לייצוא לפורמט קל לעריכה אינם ניתנים לייצוא גם בתוסף, וכך גם מפרשים כאלה. אותם ספרים אפשר להדפיס מאוצריא.
 
 הקבצים נבדקים בכלי הבדיקה הרשמיים: epubcheck ל-EPUB, ו-XSD הרשמי ל-FB2.
-קוד פתוח: https://github.com/zevisvei/otzaria-epub-export
+קוד פתוח: https://github.com/zevisvei/otzaria-plugins/tree/main/epub-export

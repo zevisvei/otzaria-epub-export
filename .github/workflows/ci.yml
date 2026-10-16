@@ -10,8 +10,29 @@ permissions:
   pull-requests: write
 
 jobs:
+  # בדיקות הלוגיקה של כל תוסף (tools/test_core.js)
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [minyan-hamitzvot, machloket-tannaim]
+    defaults:
+      run:
+        working-directory: ${{ matrix.plugin }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/test_core.js
+
+  # ייצוא EPUB: בדיקות + epubcheck (EPUB/KEPUB) + סכמת FB2 על ספרי דוגמה
+  test-epub-export:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: epub-export
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,9 +60,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # בלי סודות: אימות בלבד (כמו החנות), עם תגובת סיכום על ה-PR
+      # בלי סודות: אימות בלבד (כמו החנות) של כל התוספים שבריפו, עם תגובת סיכום על ה-PR
       - uses: Otzaria/otzaria-plugin-validator@v1
         with:
+          path: .
           fail-on-warnings: 'true'
           pr-comment: ${{ github.event_name == 'pull_request' }}
           github-token: ${{ github.token }}

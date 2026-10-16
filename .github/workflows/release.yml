@@ -1,4 +1,4 @@
-name: Publish plugin
+name: Publish plugins
 
 on:
   push:
@@ -11,16 +11,35 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - plugin: epub-export
+            screenshots: |
+              screenshots/main.png
+          - plugin: minyan-hamitzvot
+            screenshots: |
+              screenshots/main.png
+              screenshots/compare.png
+          - plugin: machloket-tannaim
+            screenshots: |
+              screenshots/main.png
+              screenshots/tanna.png
+              screenshots/pair.png
     steps:
       - uses: actions/checkout@v4
 
-      # מאמת ובונה תמיד; מפרסם לחנות כשהסודות מוגדרים והגרסה ב-manifest.json עלתה.
-      # דחיפה ראשונה (תוסף חדש) ממתינה לאישור מנהל.
+      # לכל תוסף: מאמת ובונה תמיד; מפרסם לחנות כשהסודות מוגדרים והגרסה ב-manifest.json עלתה
+      # (גרסה שכבר בחנות — מדולגת). דחיפה ראשונה (תוסף חדש) ממתינה לאישור מנהל.
+      # הנתיבים (תמונה, תיאור, צילומי מסך) יחסיים לתיקיית התוסף.
       # זמנית: הענף של Otzaria/otzaria-plugin-validator#8, ששולח לחנות את תמונת התוסף והתיאור המלא.
       # אחרי המיזוג — לחזור ל-Otzaria/otzaria-plugin-validator@v1.
       - id: otzaria
         uses: zevisvei/otzaria-plugin-validator@feat/store-image
         with:
+          path: ${{ matrix.plugin }}
           fail-on-warnings: 'true'
           build: 'true'
           otzaria-user: ${{ secrets.OTZARIA_USER }}
@@ -30,27 +49,33 @@ jobs:
           update-image: 'true'
           description-file: STORE_DESCRIPTION.txt
           update-description: 'true'
-          screenshots: |
-            screenshots/main.png
+          screenshots: ${{ matrix.screenshots }}
 
-      # רליס ב-GitHub לכל גרסה חדשה (v<version>), עם קובץ ה-.otzplugin מצורף
+      # רליס ב-GitHub לכל גרסה חדשה של כל תוסף (<plugin>-v<version>), עם קובץ ה-.otzplugin מצורף
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          PLUGIN: ${{ matrix.plugin }}
           PLUGIN_FILE: ${{ steps.otzaria.outputs.plugin-file }}
           SHA256: ${{ steps.otzaria.outputs.sha256 }}
         run: |
-          VERSION=$(jq -r .version manifest.json)
-          TAG="v$VERSION"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release $TAG already exists — skipping"
-            exit 0
-          fi
+          NAME=$(jq -r .name "$PLUGIN/manifest.json")
+          VERSION=$(jq -r .version "$PLUGIN/manifest.json")
+          TAG="$PLUGIN-v$VERSION"
+          # ייצוא EPUB פורסם לפני המעבר לריפו התוספים בתגיות v<version>
+          LEGACY=""
+          [ "$PLUGIN" = "epub-export" ] && LEGACY="v$VERSION"
+          for t in "$TAG" $LEGACY; do
+            if gh release view "$t" >/dev/null 2>&1; then
+              echo "release $t already exists — skipping"
+              exit 0
+            fi
+          done
           {
-            echo "## ייצוא EPUB $VERSION"
+            echo "## $NAME $VERSION"
             echo
             echo "התקנה: באוצריא — הגדרות ← תוספים ← התקנה מקובץ, ובחירת הקובץ \`$(basename "$PLUGIN_FILE")\`."
             echo
             echo "SHA-256: \`$SHA256\`"
           } > notes.md
-          gh release create "$TAG" "$PLUGIN_FILE" --title "ייצוא EPUB $VERSION" --notes-file notes.md --target "$GITHUB_SHA"
+          gh release create "$TAG" "$PLUGIN_FILE" --title "$NAME $VERSION" --notes-file notes.md --target "$GITHUB_SHA"

@@ -6,7 +6,7 @@
   "sdkVersion": "1.x",
   "description": "ייצוא ספרים ותיקיות מאוצריא ל-EPUB, ‏Kobo, ‏Word ו-FB2 מימין לשמאל: טווח, מפרשים כהערות נפתחות, גופנים, תוכן עניינים, שער וזכויות.",
   "author": "zevisvei",
-  "homepage": "https://github.com/zevisvei/otzaria-epub-export",
+  "homepage": "https://github.com/zevisvei/otzaria-plugins/tree/main/epub-export",
   "stability": "beta",
   "minAppVersion": "0.9.98",
   "entrypoint": "index.html",

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "com.community.minyan-hamitzvot",
+  "name": "מניין המצוות",
+  "version": "1.0.0",
+  "sdkVersion": "1.x",
+  "description": "תרי״ג מצוות כמניין בה״ג, הרמב״ם, הרמב״ן, הסמ״ג וספר החינוך: כל מונה לפי סדרו, במה נחלקו, ומי מנה כל מצוה — ועיון במקומה ובפסוק.",
+  "author": "zevisvei",
+  "homepage": "https://github.com/zevisvei/otzaria-plugins/tree/main/minyan-hamitzvot",
+  "stability": "beta",
+  "minAppVersion": "0.9.97",
+  "entrypoint": "index.html",
+  "icon": "assets/icon.png",
+  "network": {
+    "enabled": false,
+    "allowlist": []
+  },
+  "permissions": [
+    "library.books.read",
+    "library.content.read",
+    "reader.open"
+  ],
+  "contributes": {
+    "toolTab": {
+      "title": "מניין המצוות",
+      "order": 310,
+      "allowOrderBeforeBuiltIns": false,
+      "defaultPinned": false,
+      "iconName": "text_number_list_24_regular"
+    }
+  }
+}

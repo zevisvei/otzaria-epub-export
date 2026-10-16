@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>מניין המצוות</title>
+  <link rel="stylesheet" href="../css/base.css" />
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <h1>מניין המצוות</h1>
+      <span class="topbar-subtitle">תרי״ג מצוות לשיטות הראשונים</span>
+      <span class="topbar-spacer"></span>
+      <button class="topbar-btn" id="aboutBtn" title="אודות" aria-label="אודות">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>
+      </button>
+    </header>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" data-view="moneh">לפי המונה</button>
+      <button class="tab" role="tab" data-view="compare">במה נחלקו</button>
+      <button class="tab" role="tab" data-view="all">כלל המצוות</button>
+    </nav>
+    <main class="app-content" id="main" tabindex="-1"></main>
+  </div>
+
+  <dialog class="dlg" id="aboutDlg">
+    <h2>מניין המצוות</h2>
+    <p>דרש רבי שמלאי: שש מאות ושלש עשרה מצוות נאמרו לו למשה, שלש מאות וששים וחמש לאוין כמנין ימות החמה, ומאתים וארבעים ושמונה עשה כנגד אבריו של אדם (מכות כג:).</p>
+    <p>ולא פירשו חכמים אילו הן, ונחלקו הראשונים במניינן. כאן מסודרים מניינם של בה״ג, הרמב״ם, הרמב״ן, הסמ״ג וספר החינוך — כל מונה לפי סדרו, ובמה נחלקו זה על זה. בכל מצוה אפשר לעיין במקומה בספר המונה ובפסוק שממנו נלמדה.</p>
+    <p class="small muted" id="aboutVersion"></p>
+    <p class="small muted">סידור המצוות ושיוכן לכל מונה — מתוך „התרי״ג מצות” (thetaryag.com, רישיון MIT). הטקסט נפתח מספרי אוצריא.</p>
+    <form method="dialog"><button class="btn">סגירה</button></form>
+  </dialog>
+
+  <script src="mock_otzaria.js"></script>
+  <script src="../js/data.js"></script>
+  <script src="../js/core.js"></script>
+  <script src="../js/otzaria.js"></script>
+  <script src="../js/app.js"></script>
+</body>
+</html>

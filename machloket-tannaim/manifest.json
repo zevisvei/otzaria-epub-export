@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "com.community.machloket-tannaim",
+  "name": "מחלוקות התנאים",
+  "version": "1.0.0",
+  "sdkVersion": "1.x",
+  "description": "כל מחלוקת שבמשנה: מי החולקים, מי מחמיר ומי מקל, והלכה כמי לפי הרמב״ם. דברי כל תנא ועם מי נחלק, ובין תנא לחבירו — עם עיון במשנה.",
+  "author": "zevisvei",
+  "homepage": "https://github.com/zevisvei/otzaria-plugins/tree/main/machloket-tannaim",
+  "stability": "beta",
+  "minAppVersion": "0.9.97",
+  "entrypoint": "index.html",
+  "icon": "assets/icon.png",
+  "network": {
+    "enabled": false,
+    "allowlist": []
+  },
+  "permissions": [
+    "library.books.read",
+    "library.content.read",
+    "reader.open"
+  ],
+  "contributes": {
+    "toolTab": {
+      "title": "מחלוקות התנאים",
+      "order": 320,
+      "allowOrderBeforeBuiltIns": false,
+      "defaultPinned": false,
+      "iconName": "people_community_24_regular"
+    }
+  }
+}
