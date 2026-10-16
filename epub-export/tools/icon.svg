@@ -1,58 +1,61 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- אייקון בסגנון תוספי חנות אוצריא: מסגרת ספר פתוח מוזהבת וסמל במרכז (קורא ספרים + חץ הורדה) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900">
+  <!-- סגנון תוספי חנות אוצריא: מסגרת ספר פתוח מוזהבת, קו כפול מובלט, וסמל מוזהב במרכז (קורא ספרים אלקטרוני וחץ הורדה) -->
   <defs>
-    <radialGradient id="bg" cx="50%" cy="45%" r="70%">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#f1ede4"/>
-    </radialGradient>
-    <linearGradient id="gold" x1="0" y1="0" x2="0.35" y2="1">
-      <stop offset="0" stop-color="#fbe9a6"/>
-      <stop offset="0.28" stop-color="#e2b84e"/>
-      <stop offset="0.55" stop-color="#b8861f"/>
-      <stop offset="0.78" stop-color="#e7c25c"/>
-      <stop offset="1" stop-color="#8f6512"/>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbe7a1"/>
+      <stop offset="0.35" stop-color="#e0b44a"/>
+      <stop offset="0.65" stop-color="#b9861f"/>
+      <stop offset="1" stop-color="#e9c35c"/>
     </linearGradient>
-    <linearGradient id="goldDeep" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f3d67e"/>
-      <stop offset="0.5" stop-color="#b07e1a"/>
-      <stop offset="1" stop-color="#d9ac43"/>
+    <linearGradient id="goldSide" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7dc86"/>
+      <stop offset="0.45" stop-color="#c8952b"/>
+      <stop offset="1" stop-color="#9a6c14"/>
     </linearGradient>
-    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fffdf6"/>
-      <stop offset="1" stop-color="#f6eed8"/>
+    <linearGradient id="fillGold" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#fbe9a8"/>
+      <stop offset="0.4" stop-color="#e3b84f"/>
+      <stop offset="0.75" stop-color="#bf8c24"/>
+      <stop offset="1" stop-color="#e5bf58"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#6b4a0c" flood-opacity="0.35"/>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#5a3d08" flood-opacity="0.32"/>
     </filter>
-    <filter id="soft" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#6b4a0c" flood-opacity="0.35"/>
+    <filter id="blur" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="3"/></filter>
+    <filter id="soft" x="-15%" y="-15%" width="130%" height="135%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#5a3d08" flood-opacity="0.35"/>
     </filter>
-    <path id="book" d="M256 128 C214 98 140 90 78 103 L78 404 C140 392 214 399 256 428 C298 399 372 392 434 404 L434 103 C372 90 298 98 256 128 Z"/>
+    <!-- הדף הפנימי: חריץ השדרה למעלה ולמטה -->
+    <path id="page" d="M235 105 H550 L600 150 L650 105 H965 V655 H650 L600 700 L550 655 H235 Z"/>
+    <!-- הכריכה: נראית בצדדים ובתחתית -->
+    <path id="cover" d="M235 205 H140 V760 H550 L600 805 L650 760 H1060 V205 H965"/>
   </defs>
 
-  <rect width="512" height="512" fill="url(#bg)"/>
+  <rect x="-100" y="-100" width="1400" height="1100" fill="#ffffff"/>
 
-  <g filter="url(#shadow)" fill="none" stroke-linejoin="round">
-    <!-- מסגרת הספר: קו חיצוני עבה, קו פנימי וקו דק -->
-    <use href="#book" stroke="url(#gold)" stroke-width="20"/>
-    <use href="#book" stroke="#fff6d8" stroke-width="3" opacity="0.7"/>
-    <use href="#book" transform="translate(256 266) scale(0.86) translate(-256 -266)" stroke="url(#gold)" stroke-width="9"/>
-    <use href="#book" transform="translate(256 266) scale(0.78) translate(-256 -266)" stroke="url(#goldDeep)" stroke-width="3.5"/>
+  <g filter="url(#shadow)" fill="none" stroke-linejoin="round" stroke-linecap="round">
+    <!-- כל קו: צינור זהב עבה — שוליים כהים, גוף מוזהב ופס אור עליון -->
+    <use href="#cover" stroke="#7a5410" stroke-width="62"/>
+    <use href="#cover" stroke="url(#gold)" stroke-width="52"/>
+    <use href="#cover" stroke="#fff6d6" stroke-width="16" opacity="0.65" filter="url(#blur)" transform="translate(-3 -8)"/>
+    <use href="#page" fill="#ffffff" stroke="#7a5410" stroke-width="62"/>
+    <use href="#page" stroke="url(#gold)" stroke-width="52"/>
+    <use href="#page" stroke="#fff6d6" stroke-width="16" opacity="0.65" filter="url(#blur)" transform="translate(-3 -8)"/>
+    <!-- קו פנימי דק -->
+    <use href="#page" transform="translate(600 402) scale(0.86) translate(-600 -402)" stroke="#8f6512" stroke-width="16"/>
+    <use href="#page" transform="translate(600 402) scale(0.86) translate(-600 -402)" stroke="url(#goldSide)" stroke-width="11"/>
   </g>
 
-  <g filter="url(#soft)">
-    <!-- קורא ספרים אלקטרוני -->
-    <rect x="182" y="150" width="148" height="214" rx="20" fill="url(#gold)"/>
-    <rect x="194" y="164" width="124" height="170" rx="8" fill="url(#screen)"/>
-    <circle cx="256" cy="350" r="6.5" fill="#fff3cc"/>
-    <!-- שורות טקסט מיושרות לימין -->
-    <g fill="url(#goldDeep)">
-      <rect x="216" y="180" width="88" height="8" rx="4"/>
-      <rect x="230" y="198" width="74" height="7" rx="3.5"/>
-      <rect x="208" y="214" width="96" height="7" rx="3.5"/>
-      <rect x="240" y="230" width="64" height="7" rx="3.5"/>
+  <g filter="url(#soft)" transform="translate(600 402) scale(1.08) translate(-600 -405)">
+    <rect x="490" y="250" width="220" height="320" rx="30" fill="url(#fillGold)" stroke="#8f6512" stroke-width="4"/>
+    <rect x="510" y="272" width="180" height="252" rx="12" fill="#fffaf0" stroke="#b9861f" stroke-width="3"/>
+    <circle cx="600" cy="548" r="10" fill="#fff3c9" stroke="#8f6512" stroke-width="2"/>
+    <g fill="url(#goldSide)">
+      <rect x="540" y="296" width="126" height="12" rx="6"/>
+      <rect x="560" y="322" width="106" height="11" rx="5.5"/>
+      <rect x="530" y="346" width="136" height="11" rx="5.5"/>
+      <rect x="575" y="370" width="91" height="11" rx="5.5"/>
     </g>
-    <!-- חץ הורדה -->
-    <path d="M244 248 h24 v30 h20 l-32 38 l-32 -38 h20 z" fill="url(#gold)" stroke="#8f6512" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M582 392 h36 v44 h30 l-48 56 l-48 -56 h30 z" fill="url(#fillGold)" stroke="#8f6512" stroke-width="4" stroke-linejoin="round"/>
   </g>
 </svg>

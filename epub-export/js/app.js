@@ -5,7 +5,7 @@
 
   const C = window.EpubCore;
   const HAS_OTZ = typeof window.Otzaria !== 'undefined';
-  const VERSION = '1.5.1'; // יש לעדכן יחד עם manifest.json
+  const VERSION = '1.5.2'; // יש לעדכן יחד עם manifest.json
   const CHUNK = 5000; // תקרת library.getBookContent
   const LINKS_WINDOW = 200; // תקרת library.getLinks
   const LINK_CONTENT_BATCH = 25; // תקרת library.getLinkContent
